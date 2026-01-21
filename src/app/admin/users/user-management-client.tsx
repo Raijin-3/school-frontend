@@ -39,6 +39,7 @@ import {
   Users,
   GraduationCap,
   UserCheck,
+  User,
   UserX,
   Calendar,
   ChevronLeft,
@@ -67,13 +68,13 @@ const createUserSchema = z.object({
   password: z.string().min(6, 'Password must be at least 6 characters'),
   full_name: z.string().min(2, 'Full name must be at least 2 characters'),
   mobile: z.string().optional(),
-  role: z.enum(['student', 'teacher'], { required_error: 'Please select a role' }),
+  role: z.enum(['student', 'teacher', 'parent'], { required_error: 'Please select a role' }),
 })
 
 const updateUserSchema = z.object({
   full_name: z.string().min(2, 'Full name must be at least 2 characters').optional(),
   mobile: z.string().optional(),
-  role: z.enum(['student', 'teacher', 'admin']).optional(),
+  role: z.enum(['student', 'teacher', 'admin', 'parent']).optional(),
   education: z.string().optional(),
   graduation_year: z.number().min(1950).max(new Date().getFullYear() + 10).optional(),
   domain: z.string().optional(),
@@ -114,6 +115,7 @@ interface UserStats {
   students: number
   teachers: number
   admins: number
+  parents: number
   activeUsers: number
   newUsersThisMonth: number
 }
@@ -146,12 +148,13 @@ export function UserManagementClient() {
     students: 0,
     teachers: 0,
     admins: 0,
+    parents: 0,
     activeUsers: 0,
     newUsersThisMonth: 0
   })
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
-  const [roleFilter, setRoleFilter] = useState<'all' | 'student' | 'teacher' | 'admin'>('all')
+  const [roleFilter, setRoleFilter] = useState<'all' | 'student' | 'teacher' | 'admin' | 'parent'>('all')
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
@@ -240,7 +243,7 @@ export function UserManagementClient() {
   }
 
   // Filter handler
-  const handleRoleFilter = (role: 'all' | 'student' | 'teacher' | 'admin') => {
+  const handleRoleFilter = (role: 'all' | 'student' | 'teacher' | 'admin' | 'parent') => {
     setRoleFilter(role)
     setCurrentPage(1)
   }
@@ -256,6 +259,7 @@ export function UserManagementClient() {
       'name,number,email,password,assigned_course,user_type',
       'John Doe,1234567890,john@example.com,Password123,course-123,student',
       'Jane Doe,5551234,jane@example.com,Password123,"course-456,course-789",teacher',
+      'Parent Partner,,parent@example.com,Password123,,parent',
       'Alice Smith,,alice@example.com,Password123,,admin'
     ].join('\n')
 
@@ -348,7 +352,7 @@ export function UserManagementClient() {
     setSelectedUser(user)
     setUpdateValue('full_name', user.profile.full_name || '')
     setUpdateValue('mobile', user.profile.mobile || '')
-    setUpdateValue('role', user.profile.role as 'student' | 'teacher' | 'admin')
+    setUpdateValue('role', user.profile.role as 'student' | 'teacher' | 'admin' | 'parent')
     setUpdateValue('education', user.profile.education || '')
     setUpdateValue('graduation_year', user.profile.graduation_year || undefined)
     setUpdateValue('domain', user.profile.domain || '')
@@ -415,9 +419,13 @@ export function UserManagementClient() {
       case 'admin': return 'destructive'
       case 'teacher': return 'default'
       case 'student': return 'secondary'
+      case 'parent': return 'outline'
       default: return 'outline'
     }
   }
+
+  const getRolePercentage = (count: number) =>
+    stats.totalUsers ? Math.round((count / stats.totalUsers) * 100) : 0
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString()
@@ -448,7 +456,7 @@ export function UserManagementClient() {
                   User Management
                 </h1>
                 <p className="text-gray-600 mt-2">
-                  Manage students, teachers, and administrators
+                  Manage students, teachers, parents, and administrators
                 </p>
               </div>
               <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
@@ -462,7 +470,7 @@ export function UserManagementClient() {
                   <DialogHeader>
                     <DialogTitle>Create New User</DialogTitle>
                     <DialogDescription>
-                      Add a new student or teacher to the platform
+                      Add a new student, teacher, or parent to the platform
                     </DialogDescription>
                   </DialogHeader>
                   <form onSubmit={handleSubmitCreate(handleCreateUser)} className="space-y-6">
@@ -518,6 +526,7 @@ export function UserManagementClient() {
                               <SelectContent>
                                 <SelectItem value="student">Student</SelectItem>
                                 <SelectItem value="teacher">Teacher</SelectItem>
+                                <SelectItem value="parent">Parent</SelectItem>
                               </SelectContent>
                             </Select>
                           )}
@@ -562,7 +571,7 @@ export function UserManagementClient() {
         </div>
 
         {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
           <Card className="border-white/20 bg-white/80 backdrop-blur-xl">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Total Users</CardTitle>
@@ -584,7 +593,7 @@ export function UserManagementClient() {
             <CardContent>
               <div className="text-2xl font-bold">{stats.students}</div>
               <p className="text-xs text-muted-foreground">
-                {Math.round((stats.students / stats.totalUsers) * 100)}% of total
+                {getRolePercentage(stats.students)}% of total
               </p>
             </CardContent>
           </Card>
@@ -597,7 +606,20 @@ export function UserManagementClient() {
             <CardContent>
               <div className="text-2xl font-bold">{stats.teachers}</div>
               <p className="text-xs text-muted-foreground">
-                {Math.round((stats.teachers / stats.totalUsers) * 100)}% of total
+                {getRolePercentage(stats.teachers)}% of total
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card className="border-white/20 bg-white/80 backdrop-blur-xl">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Parents</CardTitle>
+              <User className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{stats.parents}</div>
+              <p className="text-xs text-muted-foreground">
+                {getRolePercentage(stats.parents)}% of total
               </p>
             </CardContent>
           </Card>
@@ -655,7 +677,7 @@ export function UserManagementClient() {
                       Use comma separated course IDs in <code>assigned_course</code>.
                     </li>
                     <li>
-                      <code>user_type</code> can be <strong>student</strong>, <strong>teacher</strong>, or <strong>admin</strong>.
+                      <code>user_type</code> can be <strong>student</strong>, <strong>teacher</strong>, <strong>parent</strong>, or <strong>admin</strong>.
                     </li>
                   </ul>
                 </div>
@@ -684,6 +706,12 @@ export function UserManagementClient() {
                             email: 'jane.smith@example.com',
                             course: 'course-456,course-789',
                             type: 'teacher'
+                          },
+                          {
+                            name: 'Parent Partner',
+                            email: 'parent.partner@example.com',
+                            course: '',
+                            type: 'parent'
                           },
                           {
                             name: 'Bob Johnson',
@@ -901,6 +929,7 @@ export function UserManagementClient() {
                     <SelectItem value="student">Students</SelectItem>
                     <SelectItem value="teacher">Teachers</SelectItem>
                     <SelectItem value="admin">Admins</SelectItem>
+                    <SelectItem value="parent">Parents</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -1062,6 +1091,7 @@ export function UserManagementClient() {
                           <SelectContent>
                             <SelectItem value="student">Student</SelectItem>
                             <SelectItem value="teacher">Teacher</SelectItem>
+                            <SelectItem value="parent">Parent</SelectItem>
                             <SelectItem value="admin">Admin</SelectItem>
                           </SelectContent>
                         </Select>
