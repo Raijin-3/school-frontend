@@ -20,6 +20,7 @@ const schema = z.object({
 })
 
 type RoleType = "student" | "teacher" | "parent"
+type AuthRole = RoleType | "admin"
 
 const roleConfig = {
   student: {
@@ -134,6 +135,24 @@ export function LoginForm() {
     }
 
     try {
+      const authRole = String(payload?.user?.role ?? "student").toLowerCase() as AuthRole
+      const roleAllowed =
+        (roleTab === "student" && authRole === "student") ||
+        (roleTab === "teacher" && (authRole === "teacher" || authRole === "admin")) ||
+        (roleTab === "parent" && authRole === "parent")
+
+      if (!roleAllowed) {
+        const friendlyRole =
+          authRole === "admin" || authRole === "teacher"
+            ? "Teacher"
+            : authRole === "parent"
+              ? "Parent"
+              : "Student"
+        toast.error(`This account is a ${authRole}. Please use the ${friendlyRole} login tab.`)
+        setIsLoading(false)
+        return
+      }
+
       const session = payload.supabase_session
       await toast.promise(
         (async () => {
