@@ -14,7 +14,7 @@ export type BackendLoginResponse = {
   user: {
     id: string;
     email: string;
-    role: "admin" | "student";
+    role: "admin" | "teacher" | "student" | "parent";
   };
   supabase_session?: Session | null;
 };

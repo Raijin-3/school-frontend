@@ -20,13 +20,12 @@ export const metadata = { title: "Teacher | Jarvis" }
 export default async function TeacherPage() {
   const sb = supabaseServer()
   const { data: { user } } = await sb.auth.getUser()
-  // NOTE: Temporarily bypass auth/role checks for UI design work.
-  // if (!user) redirect("/login")
+  if (!user) redirect("/login")
 
   // Ensure onboarding complete and correct role
   const profile = await apiGet<any>("/v1/profile").catch(() => null)
-  // if (!profile?.onboarding_completed) redirect("/profile")
-  // if ((profile?.role ?? "").toLowerCase() !== "teacher") redirect("/dashboard")
+  const role = String(profile?.role ?? "").toLowerCase()
+  if (role !== "teacher" && role !== "admin") redirect("/dashboard")
 
   const data = await apiGet<any>("/v1/dashboard").catch(() => ({
     panels: ["Cohorts", "Assignments", "Progress"],
