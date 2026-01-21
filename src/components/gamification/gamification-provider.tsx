@@ -1,0 +1,569 @@
+"use client";
+
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
+import { supabaseBrowser } from '@/lib/supabase-browser';
+import { GAMIFICATION_PROGRESS_EVENT } from '@/lib/gamification';
+
+interface GamificationStats {
+  total_points: number;
+  current_level: number;
+  current_streak: number;
+  longest_streak: number;
+  achievements_count: number;
+  badges_count: number;
+  rank_position?: number;
+}
+
+interface Achievement {
+  id: string;
+  achievement_type_id: string;
+  earned_at: string;
+  points_earned: number;
+  is_featured: boolean;
+  achievement: {
+    name: string;
+    display_name: string;
+    description: string;
+    icon: string;
+    category: string;
+    color: string;
+    points_reward: number;
+  };
+}
+
+interface DailyChallenge {
+  id: string;
+  title: string;
+  description: string;
+  challenge_type: string;
+  target_value: number;
+  points_reward: number;
+  difficulty_level: string;
+  progress?: {
+    id: string;
+    current_progress: number;
+    completed_at: string | null;
+    points_earned: number;
+  };
+}
+
+interface Badge {
+  id: string;
+  badge_id: string;
+  earned_at: string;
+  is_equipped: boolean;
+  badge: {
+    name: string;
+    display_name: string;
+    description: string;
+    icon: string;
+    color_primary: string;
+    rarity: string;
+  };
+}
+
+interface Notification {
+  id: string;
+  type: string;
+  title: string;
+  message: string;
+  data: any;
+  is_read: boolean;
+  created_at: string;
+}
+
+interface GamificationContextType {
+  stats: GamificationStats | null;
+  achievements: Achievement[];
+  dailyChallenges: DailyChallenge[];
+  badges: Badge[];
+  notifications: Notification[];
+  insights: any;
+  isLoading: boolean;
+  error: string | null;
+  refreshData: (options?: { silent?: boolean }) => Promise<void>;
+  recordActivity: (activityType: string, referenceId?: string, referenceType?: string, durationMinutes?: number) => Promise<void>;
+  updateChallengeProgress: (challengeId: string, progressIncrement: number) => Promise<void>;
+  markNotificationsRead: (notificationIds: string[]) => Promise<void>;
+  awardPoints: (points: number, reason: string, referenceId?: string, referenceType?: string) => Promise<void>;
+  refreshChallenges: () => Promise<void>;
+  // Enhanced dynamic features
+  awardMicroReward: (microAchievement: string, contextData?: any) => Promise<void>;
+  getCurrentMultiplier: () => Promise<number>;
+  checkContextualAchievements: (activityData: any) => Promise<string[]>;
+  getDynamicInsights: () => Promise<any>;
+  getPersonalizedRecommendations: () => Promise<any>;
+}
+
+type GamificationProgressEventDetail = {
+  userId?: string | null;
+  totalXp?: number;
+  currentLevel?: number;
+  xpAwarded?: number;
+};
+
+const GamificationContext = createContext<GamificationContextType | undefined>(undefined);
+
+export function useGamification() {
+  const context = useContext(GamificationContext);
+  if (context === undefined) {
+    throw new Error('useGamification must be used within a GamificationProvider');
+  }
+  return context;
+}
+
+interface GamificationProviderProps {
+  children: React.ReactNode;
+  userId?: string;
+}
+
+export function GamificationProvider({ children, userId }: GamificationProviderProps) {
+  const [stats, setStats] = useState<GamificationStats | null>(null);
+  const [achievements, setAchievements] = useState<Achievement[]>([]);
+  const [dailyChallenges, setDailyChallenges] = useState<DailyChallenge[]>([]);
+  const [badges, setBadges] = useState<Badge[]>([]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [insights, setInsights] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const statsRefreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const supabase = supabaseBrowser();
+
+  const getAuthHeaders = useCallback(async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) {
+      throw new Error('No authentication token');
+    }
+    return {
+      'Authorization': `Bearer ${session.access_token}`,
+      'Content-Type': 'application/json',
+    };
+  }, [supabase.auth]);
+
+  const apiCall = useCallback(async (endpoint: string, options: RequestInit = {}) => {
+    try {
+      const headers = await getAuthHeaders();
+      const basePath = process.env.NODE_ENV === 'production' ? '' : (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080');
+      const normalizedBasePath = basePath.replace(/\/$/, '');
+      const fullUrl = endpoint.startsWith('http://') || endpoint.startsWith('https://')
+        ? endpoint
+        : `${normalizedBasePath}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+      
+      console.debug('[Gamification] Fetching:', fullUrl);
+      
+      const response = await fetch(fullUrl, {
+        ...options,
+        headers: {
+          ...headers,
+          ...options.headers,
+        },
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`API call failed: ${response.status} ${response.statusText} - ${errorText}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('[Gamification] API call error:', {
+        endpoint,
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+      throw error;
+    }
+  }, [getAuthHeaders]);
+
+  const refreshData = useCallback(
+    async (options: { silent?: boolean } = {}) => {
+      if (!userId) return;
+
+      const { silent = false } = options;
+
+      if (!silent) {
+        setIsLoading(true);
+        setError(null);
+      }
+
+      try {
+        const dashboardData = await apiCall(`/v1/gamification/dashboard/${userId}`);
+
+        setStats(dashboardData.stats);
+        setAchievements(dashboardData.recent_achievements || []);
+        setDailyChallenges(dashboardData.daily_challenges || []);
+        setBadges(dashboardData.recent_badges || []);
+        setNotifications(dashboardData.unread_notifications || []);
+        setInsights(dashboardData.insights || null);
+        setError(null);
+      } catch (error) {
+        console.error('Failed to fetch gamification data:', error);
+        if (!silent) {
+          setError('Failed to load gamification data');
+        }
+      } finally {
+        if (!silent) {
+          setIsLoading(false);
+        }
+      }
+    },
+    [userId, apiCall],
+  );
+  const scheduleStatsRefresh = useCallback(() => {
+    if (!userId) return;
+    if (statsRefreshTimeoutRef.current) {
+      clearTimeout(statsRefreshTimeoutRef.current);
+    }
+    statsRefreshTimeoutRef.current = setTimeout(() => {
+      refreshData({ silent: true }).catch(() => undefined);
+      statsRefreshTimeoutRef.current = null;
+    }, 400);
+  }, [userId, refreshData]);
+
+  useEffect(() => {
+    return () => {
+      if (statsRefreshTimeoutRef.current) {
+        clearTimeout(statsRefreshTimeoutRef.current);
+        statsRefreshTimeoutRef.current = null;
+      }
+    };
+  }, []);
+
+  const recordActivity = useCallback(async (
+    activityType: string,
+    referenceId?: string,
+    referenceType?: string,
+    durationMinutes?: number
+  ) => {
+    if (!userId) return;
+
+    try {
+      await apiCall(`/api/v1/gamification/activity/${userId}`, {
+        method: 'POST',
+        body: JSON.stringify({
+          activityType,
+          referenceId,
+          referenceType,
+          durationMinutes,
+        }),
+      });
+      
+      // Refresh data after recording activity
+      await refreshData({ silent: true });
+    } catch (error) {
+      console.error('Failed to record activity:', error);
+    }
+  }, [userId, apiCall, refreshData]);
+
+  const updateChallengeProgress = useCallback(async (challengeId: string, progressIncrement: number) => {
+    if (!userId) return;
+
+    try {
+      await apiCall(`/api/v1/gamification/challenges/${userId}/${challengeId}`, {
+        method: 'POST',
+        body: JSON.stringify({
+          progressIncrement,
+        }),
+      });
+      
+      // Refresh challenges data
+      const updatedChallenges = await apiCall(`/api/v1/gamification/challenges/${userId}`);
+      setDailyChallenges(updatedChallenges);
+    } catch (error) {
+      console.error('Failed to update challenge progress:', error);
+    }
+  }, [userId, apiCall]);
+
+  const markNotificationsRead = useCallback(async (notificationIds: string[]) => {
+    if (!userId) return;
+
+    try {
+      await apiCall(`/api/v1/gamification/notifications/${userId}/read`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          notificationIds,
+        }),
+      });
+      
+      // Update local notifications state
+      setNotifications(prev => 
+        prev.map(notification => 
+          notificationIds.includes(notification.id) 
+            ? { ...notification, is_read: true }
+            : notification
+        )
+      );
+    } catch (error) {
+      console.error('Failed to mark notifications as read:', error);
+    }
+  }, [userId, apiCall]);
+
+  const awardPoints = useCallback(async (
+    points: number,
+    reason: string,
+    referenceId?: string,
+    referenceType?: string
+  ) => {
+    if (!userId) return;
+
+    try {
+      await apiCall(`/api/v1/gamification/points/${userId}`, {
+        method: 'POST',
+        body: JSON.stringify({
+          points,
+          reason,
+          referenceId,
+          referenceType,
+        }),
+      });
+
+      setStats(prev =>
+        prev
+          ? {
+              ...prev,
+              total_points: prev.total_points + points,
+            }
+          : prev,
+      );
+      scheduleStatsRefresh();
+    } catch (error) {
+      console.error('Failed to award points:', error);
+    }
+  }, [userId, apiCall, scheduleStatsRefresh]);
+
+  // Enhanced dynamic gamification methods
+  const awardMicroReward = useCallback(async (microAchievement: string, contextData?: any) => {
+    if (!userId) return;
+
+    try {
+      await apiCall(`/v1/gamification/micro-reward/${userId}`, {
+        method: 'POST',
+        body: JSON.stringify({
+          microAchievement,
+          contextData,
+          timestamp: new Date().toISOString(),
+        }),
+      });
+    } catch (error) {
+      console.error('Error awarding micro reward:', error);
+    }
+  }, [userId, apiCall]);
+
+  const getCurrentMultiplier = useCallback(async (): Promise<number> => {
+    if (!userId) return 1.0;
+
+    try {
+      const data = await apiCall(`/v1/gamification/multiplier/${userId}`);
+      return data.multiplier || 1.0;
+    } catch (error) {
+      console.error('Error getting current multiplier:', error);
+      return 1.0;
+    }
+  }, [userId, apiCall]);
+
+  const checkContextualAchievements = useCallback(async (activityData: any): Promise<string[]> => {
+    if (!userId) return [];
+
+    try {
+      const data = await apiCall(`/v1/gamification/contextual-achievements/${userId}`, {
+        method: 'POST',
+        body: JSON.stringify({
+          activityData,
+          timestamp: new Date().toISOString(),
+        }),
+      });
+      return data.newAchievements || [];
+    } catch (error) {
+      console.error('Error checking contextual achievements:', error);
+      return [];
+    }
+  }, [userId, apiCall]);
+
+  const getDynamicInsights = useCallback(async () => {
+    if (!userId) return null;
+
+    try {
+      return await apiCall(`/v1/gamification/dynamic-insights/${userId}`);
+    } catch (error) {
+      console.error('Error getting dynamic insights:', error);
+      return null;
+    }
+  }, [userId, apiCall]);
+
+  const getPersonalizedRecommendations = useCallback(async () => {
+    if (!userId) return null;
+
+    try {
+      return await apiCall(`/v1/gamification/personalized-recommendations/${userId}`);
+    } catch (error) {
+      console.error('Error getting personalized recommendations:', error);
+      return null;
+    }
+  }, [userId, apiCall]);
+
+  useEffect(() => {
+    if (userId) {
+      refreshData();
+    }
+  }, [userId, refreshData]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const handler: EventListener = (event) => {
+      const detail = (event as CustomEvent<GamificationProgressEventDetail>).detail;
+      if (!detail) return;
+      setStats((prev) => {
+        if (!prev) {
+          if (
+            detail.totalXp === undefined &&
+            detail.currentLevel === undefined
+          ) {
+            return prev;
+          }
+          return {
+            total_points: detail.totalXp ?? 0,
+            current_level: detail.currentLevel ?? 1,
+            current_streak: 0,
+            longest_streak: 0,
+            achievements_count: 0,
+            badges_count: 0,
+          };
+        }
+        return {
+          ...prev,
+          total_points:
+            detail.totalXp !== undefined ? detail.totalXp : prev.total_points,
+          current_level:
+            detail.currentLevel !== undefined
+              ? detail.currentLevel
+              : prev.current_level,
+        };
+      });
+    };
+
+    window.addEventListener(GAMIFICATION_PROGRESS_EVENT, handler);
+    return () => {
+      window.removeEventListener(GAMIFICATION_PROGRESS_EVENT, handler);
+    };
+  }, []);
+
+  // Set up real-time updates for achievements and notifications
+  useEffect(() => {
+    if (!userId) return;
+
+    const channel = supabase
+      .channel(`gamification:${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'user_achievements',
+          filter: `user_id=eq.${userId}`,
+        },
+        () => {
+          refreshData({ silent: true });
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'gamification_notifications',
+          filter: `user_id=eq.${userId}`,
+        },
+        () => {
+          refreshData({ silent: true });
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'profiles',
+          filter: `id=eq.${userId}`,
+        },
+        (payload: { new?: Record<string, any> }) => {
+          const profile = payload?.new;
+          if (profile) {
+            setStats((prev) => {
+              if (!prev) return prev;
+              return {
+                ...prev,
+                total_points:
+                  typeof profile.total_points === 'number'
+                    ? profile.total_points
+                    : prev.total_points,
+                current_level:
+                  typeof profile.current_level === 'number'
+                    ? profile.current_level
+                    : prev.current_level,
+                current_streak:
+                  typeof profile.current_streak === 'number'
+                    ? profile.current_streak
+                    : prev.current_streak,
+                longest_streak:
+                  typeof profile.longest_streak === 'number'
+                    ? profile.longest_streak
+                    : prev.longest_streak,
+              };
+            });
+          }
+          refreshData({ silent: true });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [userId, supabase, refreshData]);
+
+  const refreshChallenges = useCallback(async () => {
+    if (!userId) return;
+
+    try {
+      await apiCall(`/v1/gamification/challenges/refresh/${userId}`, {
+        method: 'POST',
+      });
+      
+      // Refresh the dashboard data after refreshing challenges
+      await refreshData();
+    } catch (error) {
+      console.error('Failed to refresh challenges:', error);
+    }
+  }, [userId, apiCall, refreshData]);
+
+  const value: GamificationContextType = {
+    stats,
+    achievements,
+    dailyChallenges,
+    badges,
+    notifications,
+    insights,
+    isLoading,
+    error,
+    refreshData,
+    recordActivity,
+    updateChallengeProgress,
+    markNotificationsRead,
+    awardPoints,
+    refreshChallenges,
+    // Enhanced dynamic features
+    awardMicroReward,
+    getCurrentMultiplier,
+    checkContextualAchievements,
+    getDynamicInsights,
+    getPersonalizedRecommendations,
+  };
+
+  return (
+    <GamificationContext.Provider value={value}>
+      {children}
+    </GamificationContext.Provider>
+  );
+}
