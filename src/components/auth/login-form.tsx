@@ -67,14 +67,18 @@ export function LoginForm() {
 
   const resolveRedirectPath = async (payload: BackendLoginResponse): Promise<string> => {
     const normalizedRole = String(payload?.user?.role ?? "student").toLowerCase()
-    const fallbackRole: RoleType =
-      normalizedRole === "admin" || normalizedRole === "teacher" ? (normalizedRole as RoleType) : "student"
+    const fallbackRole: AuthRole =
+      normalizedRole === "admin" || normalizedRole === "teacher" || normalizedRole === "parent"
+        ? (normalizedRole as AuthRole)
+        : "student"
     const fallbackTarget =
       fallbackRole === "admin"
         ? "/admin"
         : fallbackRole === "teacher"
           ? "/teacher"
-          : "/dashboard"
+          : fallbackRole === "parent"
+            ? "/parent-dashboard"
+            : "/dashboard"
 
     const supabaseToken = payload?.supabase_session?.access_token
 
@@ -97,6 +101,7 @@ export function LoginForm() {
 
       if (role === "admin") return "/admin"
       if (role === "teacher") return "/teacher"
+      if (role === "parent") return "/parent-dashboard"
       if (!profile?.onboarding_completed) return "/profile"
 
       return "/dashboard"

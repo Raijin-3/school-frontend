@@ -68,7 +68,7 @@ const parentActions = [
 ]
 
 export default function ParentDashboardPage() {
-  const { childData } = useParentDashboardContext()
+  const { childData, parentProfile } = useParentDashboardContext()
   const { profile, todaySubjects, alerts, classDetails, focusAreas, subjectDetails, strengths, weakAreas, teacherRemarks, teacherList, communications, notifications, attendance } = childData
   const subjectProgress = subjectDetails.map((subject) => ({
     subject: subject.subject,
@@ -93,6 +93,14 @@ export default function ParentDashboardPage() {
       <div className="mx-auto max-w-6xl space-y-8 px-4 py-10 lg:py-14">
         <header className="rounded-3xl border border-white/60 bg-white/80 p-6 shadow-2xl shadow-slate-200/60 backdrop-blur-xl">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            
+            
+              {parentProfile?.full_name && (
+                <p className="text-base font-medium text-slate-700">
+                  Welcome back, {parentProfile.full_name}!
+                </p>
+              )}
+            
             <div>
               <p className="text-sm font-semibold uppercase tracking-wide text-indigo-600/90">
                 Parent Panel • Read-only + communication
@@ -104,11 +112,11 @@ export default function ParentDashboardPage() {
                 Visibility, trust, and timely involvement — everything you need to stay aligned with the classroom and their journey.
               </p>
             </div>
-            <div className="flex flex-col items-start gap-2 rounded-2xl border border-indigo-100 bg-indigo-50/60 px-4 py-3 text-sm font-semibold text-indigo-700 shadow-inner">
+            {/* <div className="flex flex-col items-start gap-2 rounded-2xl border border-indigo-100 bg-indigo-50/60 px-4 py-3 text-sm font-semibold text-indigo-700 shadow-inner">
               <span>Daily check-in</span>
               <span className="text-lg font-bold text-slate-900">Completed</span>
               <span className="text-xs text-slate-500">Latest sync: {profile.lastLogin}</span>
-            </div>
+            </div> */}
           </div>
         </header>
 

@@ -84,6 +84,11 @@ export type ChildData = {
   attendance: ChildAttendance
 }
 
+export type ParentProfile = {
+  full_name?: string | null
+  role?: string | null
+}
+
 const childPortfolio: ChildData[] = [
   {
     id: "aarav",
@@ -318,12 +323,14 @@ const ParentDashboardContext = createContext<
       setSelectedChildId: (id: string) => void
       children: { id: string; name: string; grade: string; remarks: string }[]
       childData: ChildData
+      parentProfile: ParentProfile | null
     }
   | undefined
 >(undefined)
 
 export function ParentDashboardProvider({ children }: { children: ReactNode }) {
   const [selectedChildId, setSelectedChildId] = useState(childPortfolio[0].id)
+  const [parentProfile, setParentProfile] = useState<ParentProfile | null>(null)
   useEffect(() => {
     const stored = window.localStorage.getItem("selected-parent-child")
     if (stored && childPortfolio.some((child) => child.id === stored)) {
@@ -349,6 +356,30 @@ export function ParentDashboardProvider({ children }: { children: ReactNode }) {
     window.localStorage.setItem("selected-parent-child", selectedChildId)
   }, [selectedChildId])
 
+  useEffect(() => {
+    const controller = new AbortController()
+    const loadProfile = async () => {
+      try {
+        const res = await fetch("/api/profile", {
+          cache: "no-store",
+          signal: controller.signal,
+        })
+        if (!res.ok) {
+          throw new Error("Failed to fetch parent profile")
+        }
+        const data = await res.json()
+        setParentProfile(data)
+      } catch (error: unknown) {
+        if ((error as any)?.name !== "AbortError") {
+          console.error("Failed to load parent profile:", error)
+        }
+      }
+    }
+
+    loadProfile()
+    return () => controller.abort()
+  }, [])
+
   return (
     <ParentDashboardContext.Provider
       value={{
@@ -356,6 +387,7 @@ export function ParentDashboardProvider({ children }: { children: ReactNode }) {
         setSelectedChildId,
         children: childOptions,
         childData,
+        parentProfile,
       }}
     >
       {children}
