@@ -666,7 +666,7 @@ export default async function SubjectPage({
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/20 to-indigo-50/30">
       <MobileSidebar active="/curriculum" />
       <div className="lg:flex lg:gap-6 max-w-screen-2xl mx-auto p-4 md:p-6">
-        <Sidebar active="/curriculum" />
+        <Sidebar active="/curriculum" defaultOpen={false} />
 
         <div className="flex-1">
           <SubjectLearningInterface

@@ -30,9 +30,21 @@ export default async function TeacherPage() {
   ]
 
   const performanceRows = [
-    { label: "Statistics", detail: "Subject average 82%", progress: 82 },
-    { label: "Regression", detail: "Module average 74%", progress: 74 },
-    { label: "Hypothesis Tests", detail: "Section average 69%", progress: 69 },
+    { label: "Statistics", detail: "Subject average", progress: 82, students: 32 },
+    { label: "Algebra", detail: "Subject average", progress: 76, students: 28 },
+    { label: "Calculus", detail: "Subject average", progress: 69, students: 24 },
+  ]
+
+  const moduleAverages = [
+    { label: "Regression basics", progress: 74, students: 24 },
+    { label: "Probability models", progress: 68, students: 22 },
+    { label: "Data sampling", progress: 81, students: 26 },
+  ]
+
+  const sectionAverages = [
+    { label: "Section A", progress: 69, students: 30 },
+    { label: "Section B", progress: 73, students: 27 },
+    { label: "Section C", progress: 66, students: 21 },
   ]
 
   return (
@@ -103,7 +115,10 @@ export default async function TeacherPage() {
                       <span>{row.label}</span>
                       <span>{row.progress}%</span>
                     </div>
-                    <div className="mt-1 text-xs text-slate-600">{row.detail}</div>
+                    <div className="mt-1 flex items-center justify-between text-xs text-slate-600">
+                      <span>{row.detail}</span>
+                      <span>{row.students} students</span>
+                    </div>
                     <div className="mt-3 h-2 rounded-full bg-slate-100">
                       <div
                         className="h-2 rounded-full bg-gradient-to-r from-emerald-500 to-sky-500"
@@ -112,6 +127,62 @@ export default async function TeacherPage() {
                     </div>
                   </div>
                 ))}
+              </div>
+
+              <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div className="rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-semibold text-slate-900">Module-wise student average</h3>
+                    <span className="text-xs text-slate-500">Last 30 days</span>
+                  </div>
+                  <div className="mt-3 space-y-3">
+                    {moduleAverages.map((item) => (
+                      <div key={item.label} className="rounded-lg border border-slate-200 bg-white px-3 py-3">
+                        <div className="flex items-center justify-between text-xs font-semibold text-slate-900">
+                          <span>{item.label}</span>
+                          <span>{item.progress}%</span>
+                        </div>
+                        <div className="mt-1 flex items-center justify-between text-[11px] text-slate-600">
+                          <span>Avg score</span>
+                          <span>{item.students} students</span>
+                        </div>
+                        <div className="mt-2 h-1.5 rounded-full bg-slate-100">
+                          <div
+                            className="h-1.5 rounded-full bg-gradient-to-r from-emerald-500 to-sky-500"
+                            style={{ width: `${item.progress}%` }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-semibold text-slate-900">Section-wise student average</h3>
+                    <span className="text-xs text-slate-500">Last 30 days</span>
+                  </div>
+                  <div className="mt-3 space-y-3">
+                    {sectionAverages.map((item) => (
+                      <div key={item.label} className="rounded-lg border border-slate-200 bg-white px-3 py-3">
+                        <div className="flex items-center justify-between text-xs font-semibold text-slate-900">
+                          <span>{item.label}</span>
+                          <span>{item.progress}%</span>
+                        </div>
+                        <div className="mt-1 flex items-center justify-between text-[11px] text-slate-600">
+                          <span>Avg score</span>
+                          <span>{item.students} students</span>
+                        </div>
+                        <div className="mt-2 h-1.5 rounded-full bg-slate-100">
+                          <div
+                            className="h-1.5 rounded-full bg-gradient-to-r from-emerald-500 to-sky-500"
+                            style={{ width: `${item.progress}%` }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
           </section>

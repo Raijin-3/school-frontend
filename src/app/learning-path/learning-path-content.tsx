@@ -427,14 +427,17 @@ export function LearningPathContent({
         previousModuleSubjectKey === subjectKey &&
         previousModuleMandatory === false;
 
-      const locked =
+      let locked =
         mandatory &&
         index > 0 &&
         !previousMandatoryProgressComplete &&
         !isSubjectFirst &&
         !shouldUnlockForOptionalPrev;
+      if (isFirst) {
+        locked = false;
+      }
       const explicitActivation = resolveActivationState(module);
-      const computedActive = explicitActivation ?? (!locked || !mandatory);
+      const computedActive = isFirst ? true : (explicitActivation ?? (!locked || !mandatory));
 
       const decoratedModule: ModuleWithMandatory = {
         ...module,

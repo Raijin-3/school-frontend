@@ -864,7 +864,7 @@ export async function POST(request: NextRequest) {
 
       // can we get section title here?
       const currentSectionTitle = sectionTitleById.get(sectionId);
-      console.log("Current Section Title:", currentSectionTitle);
+      // console.log("Current Section Title:", currentSectionTitle);
       
 
 
@@ -892,7 +892,7 @@ export async function POST(request: NextRequest) {
         exerciseApplicable = false;
       }
 
-      console.log(uniqueSectionSubjectTitles, currentSectionTitle);
+      // console.log(uniqueSectionSubjectTitles, currentSectionTitle);
 
        if(uniqueSectionSubjectTitles === 'Art of Problem Solving' ) {
           quizApplicable = false;

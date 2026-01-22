@@ -838,7 +838,7 @@ const RequirementChip = ({
       completed ? "text-emerald-600 bg-emerald-50" : "text-slate-500 bg-slate-100"
     }`}
   >
-    {completed ? <CheckCircle className="h-3 w-3" /> : <Clock className="h-3 w-3" />}
+    {/* {completed ? <CheckCircle className="h-3 w-3" /> : <Clock className="h-3 w-3" />} */}
     {completed ? completedLabel : pendingLabel}
   </span>
 );
@@ -10523,7 +10523,15 @@ export function SubjectLearningInterface({
     if (codeLanguage === "python") {
       return pythonCode;
     }
-    if (codeLanguage === "google_sheets" || codeLanguage === "statistics") {
+    if (
+      codeLanguage === "google_sheets" ||
+      codeLanguage === "statistics" ||
+      codeLanguage === "math" ||
+      codeLanguage === "geometry" ||
+      codeLanguage === "reasoning" ||
+      codeLanguage === "problem_solving" ||
+      codeLanguage === "mentor_chat"
+    ) {
       return worksheetSolution;
     }
     return sqlCode;
@@ -12685,7 +12693,15 @@ export function SubjectLearningInterface({
       const language = cachedRun.language;
       if (language === "python") {
         setPythonCode(cachedRun.code);
-      } else if (language === "statistics" || language === "google_sheets") {
+      } else if (
+        language === "statistics" ||
+        language === "google_sheets" ||
+        language === "math" ||
+        language === "geometry" ||
+        language === "reasoning" ||
+        language === "problem_solving" ||
+        language === "mentor_chat"
+      ) {
         setWorksheetSolution(cachedRun.code);
       } else {
         setSqlCode(cachedRun.code);
@@ -15384,156 +15400,64 @@ export function SubjectLearningInterface({
       };
 
       return (
-        <div className="rounded-2xl border border-white/60 bg-white/80 backdrop-blur-xl shadow-lg overflow-hidden p-6">
-          <div className="flex items-center justify-between mb-6">
+        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
             <div>
-              <h2 className="text-2xl font-bold text-gray-900">Adaptive Quiz Complete!</h2>
-              <p className="text-sm text-gray-600 mt-1">Review your performance</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">
+                Adaptive Quiz
+              </p>
+              <h2 className="mt-1 text-lg font-semibold text-slate-900">Quiz complete</h2>
             </div>
             <button
               onClick={handleExitAdaptiveQuiz}
-              className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-medium transition"
+              className="rounded-full border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
             >
-              Exit Quiz
+              Exit
             </button>
           </div>
 
-          <div className="bg-gradient-to-r from-green-50 to-blue-50 rounded-lg p-6 mb-6">
-            <div className="grid grid-cols-3 gap-4 text-center">
-              <div>
-                <div className="text-3xl font-bold text-indigo-600">{adaptiveQuizSummary.responses?.length || 0}</div>
-                <div className="text-sm text-gray-600 mt-1">Questions</div>
+          <div className="px-6 py-6">
+            <div className="grid grid-cols-1 gap-4 text-center sm:grid-cols-3">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <div className="text-2xl font-semibold text-slate-900">
+                  {adaptiveQuizSummary.responses?.length || 0}
+                </div>
+                <div className="text-xs text-slate-500">Questions</div>
               </div>
-              <div>
-                <div className="text-3xl font-bold text-green-600">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <div className="text-2xl font-semibold text-slate-900">
                   {adaptiveQuizSummary.responses?.filter((r: any) => r.is_correct).length || 0}
                 </div>
-                <div className="text-sm text-gray-600 mt-1">Correct</div>
+                <div className="text-xs text-slate-500">Correct</div>
               </div>
-              <div>
-                <div className="text-3xl font-bold text-purple-600">
-                  {Math.round(((adaptiveQuizSummary.responses?.filter((r: any) => r.is_correct).length || 0) / (adaptiveQuizSummary.responses?.length || 1)) * 100)}%
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <div className="text-2xl font-semibold text-slate-900">
+                  {Math.round(
+                    ((adaptiveQuizSummary.responses?.filter((r: any) => r.is_correct).length || 0) /
+                      (adaptiveQuizSummary.responses?.length || 1)) *
+                      100,
+                  )}
+                  %
                 </div>
-                <div className="text-sm text-gray-600 mt-1">Score</div>
+                <div className="text-xs text-slate-500">Score</div>
               </div>
             </div>
-          </div>
 
-          <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-gray-900">Question Review</h3>
-            {adaptiveQuizSummary.responses?.map((response: any, index: number) => {
-              const summaryOffset = liveAdaptiveQuestionOffset;
-              const baseNumber =
-                typeof response.question_number === 'number' &&
-                Number.isFinite(response.question_number) &&
-                response.question_number > 0
-                  ? response.question_number
-                  : index + 1;
-              const displayNumber = summaryOffset + baseNumber;
-              const isCorrect = response.is_correct === true;
-              const responseKey =
-                response.id ??
-                `${selectedAdaptiveSessionReview?.sessionId ?? 'session'}-${response.question_number ?? index}`;
-              const correctAnswer =
-                response.correct_answer ??
-                response.correct_option?.text ??
-                response.correct_option?.label ??
-                "N/A";
-              const userAnswer = response.user_answer ?? "No answer";
-              return (
-                <div
-                  key={responseKey}
-                  className={`rounded-2xl border p-4 ${isCorrect ? "border-emerald-200 bg-emerald-50/80" : "border-red-200 bg-red-50/80"}`}
+            {adaptivePracticeExerciseForSection && (
+              <div className="mt-6 flex justify-center">
+                <button
+                  type="button"
+                  onClick={handleGoToAdaptivePracticeExercise}
+                  className="rounded-full bg-indigo-600 px-5 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500"
                 >
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <p className="text-sm font-semibold text-slate-900">Question {displayNumber}</p>
-                      {response.difficulty && (
-                        <p className="text-[11px] text-slate-500">
-                          {response.difficulty}
-                        </p>
-                      )}
-                    </div>
-                    <span
-                      className={`text-xs font-medium px-2 py-1 rounded-full ${
-                        response.difficulty === 'easy'
-                          ? 'bg-green-100 text-green-700'
-                          : response.difficulty === 'medium'
-                          ? 'bg-yellow-100 text-yellow-700'
-                          : 'bg-red-100 text-red-700'
-                      }`}
-                    >
-                      {response.difficulty || 'N/A'}
-                    </span>
-                  </div>
-                  <div
-                    className="text-gray-800 mb-3 whitespace-pre-wrap prose prose-sm prose-slate max-w-none"
-                    dangerouslySetInnerHTML={{ __html: sanitizeQuestionHTML(response.question_text || '') }}
-                  />
-                  <div className="space-y-1 text-sm">
-                    <div className="text-gray-600">
-                      Your answer:{" "}
-                      <span className={isCorrect ? 'text-green-700 font-medium' : 'text-red-700 font-medium'}>
-                        {userAnswer}
-                      </span>
-                    </div>
-                    {!isCorrect && (
-                      <div className="text-gray-600">
-                        Correct answer:{" "}
-                        <span className="text-green-700 font-medium">
-                          {correctAnswer}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                  {response.explanation && (
-                    <div className="mt-3 pt-3 border-t border-gray-300">
-                      <div
-                        className="text-sm text-gray-700 prose prose-sm prose-slate max-w-none"
-                        dangerouslySetInnerHTML={{
-                          __html: sanitizeQuestionHTML(response.explanation),
-                        }}
-                      />
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-      </div>
-      {(adaptivePracticeExerciseForSection || adaptiveCanAdvanceFromQuiz || adaptiveCanGoPrev) && (
-        <div className="mt-6 px-6 pb-6 flex flex-wrap gap-3">
-          <button
-            type="button"
-            onClick={handlePrevResource}
-            disabled={!adaptiveCanGoPrev}
-            className="flex-1 min-w-[150px] rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 transition hover:border-indigo-300 hover:text-slate-900 disabled:border-slate-200 disabled:text-slate-300"
-          >
-            Previous
-          </button>
-          {adaptivePracticeExerciseForSection && (
-            <button
-              type="button"
-              onClick={handleGoToAdaptivePracticeExercise}
-              className="flex-1 min-w-[180px] rounded-full bg-gradient-to-r from-green-500 to-teal-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:from-green-600 hover:to-teal-600"
-            >
-              Go to Practice Exercise
-            </button>
-          )}
-          {adaptiveCanAdvanceFromQuiz && (
-            <button
-              type="button"
-              onClick={handleNextResource}
-              className="flex-1 min-w-[150px] inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Next Resource
-              <ChevronRight className="h-3.5 w-3.5" />
-            </button>
-          )}
+                  Go to Practice
+                </button>
+              </div>
+            )}
+          </div>
         </div>
-      )}
-      </div>
-    );
-  }
+      );
+    }
 
   // Show current question
     if (currentAdaptiveQuestion) {
@@ -15592,6 +15516,14 @@ export function SubjectLearningInterface({
         typeof resolvedSessionCount === "number"
           ? resolvedSessionCount * ADAPTIVE_QUIZ_SESSION_SIZE
           : null;
+      const totalQuestionCount =
+        totalQuestionTarget ??
+        (typeof adaptiveQuizSession?.target_length === "number"
+          ? adaptiveQuizSession.target_length
+          : null);
+      const progressPercent = totalQuestionCount
+        ? Math.min((currentQuestionDisplayNumber / totalQuestionCount) * 100, 100)
+        : 0;
 
       // console.log(currentAdaptiveQuestion);
 
@@ -15610,205 +15542,194 @@ export function SubjectLearningInterface({
       };
 
         return (
-          <div className="rounded-2xl border border-white/60 bg-white/80 backdrop-blur-xl shadow-lg overflow-hidden p-6">
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <div className="flex items-center gap-2">
-                  <h2 className="text-xl font-bold text-gray-900">Adaptive Quiz</h2>
-                  {isAdaptiveSectionPassed && (
-                    <span className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700 bg-emerald-100 rounded-full px-2 py-0.5">
-                      Passed
+          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="border-b border-slate-200 px-6 py-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">
+                    Adaptive Quiz
+                  </p>
+                  <h2 className="mt-1 text-lg font-semibold text-slate-900">
+                    Question {currentQuestionDisplayNumber}
+                    {totalQuestionCount ? ` of ${totalQuestionCount}` : ""}
+                  </h2>
+                </div>
+                <button
+                  onClick={handleExitAdaptiveQuiz}
+                  className="rounded-full border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
+                >
+                  Exit
+                </button>
+              </div>
+              <div className="mt-3 h-2 w-full rounded-full bg-slate-100">
+                <div
+                  className="h-2 rounded-full bg-indigo-500 transition-all duration-300"
+                  style={{ width: `${progressPercent}%` }}
+                />
+              </div>
+            </div>
+
+            <div className="bg-slate-50 px-6 py-6">
+              <div className="mx-auto flex w-full max-w-none flex-col gap-6">
+                <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                  <h3 className="text-xl font-semibold text-slate-900">Question</h3>
+                  <div
+                    className="mt-3 text-lg leading-relaxed text-slate-700 prose prose-lg prose-slate max-w-none"
+                    dangerouslySetInnerHTML={{
+                      __html: sanitizeQuestionHTML(currentAdaptiveQuestion.question_text),
+                    }}
+                  />
+                  {currentAdaptiveQuestion.difficulty && (
+                    <span className="mt-4 inline-flex rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
+                      {currentAdaptiveQuestion.difficulty}
                     </span>
                   )}
-                  <span className="text-[11px] text-slate-500 leading-relaxed">
-                    (Jarvis may forget the data table or some code snippets in 5% cases. It’s still evolving!)
-                  </span>
                 </div>
-                <p className="text-sm text-gray-600 mt-1">
-                  Question {currentQuestionDisplayNumber}:
-                  {totalQuestionTarget
-                    ? ` of ${totalQuestionTarget}`
-                    : adaptiveQuizSession?.target_length
-                    ? ` of ~${adaptiveQuizSession.target_length}`
-                    : ""}
-                </p>
-              </div>
-            <button
-              onClick={handleExitAdaptiveQuiz}
-              className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition"
-            >
-              Exit
-            </button>
-          </div>
 
-          <div className="mb-6">
-            <div
-              className="text-lg font-medium text-gray-900 mb-4 whitespace-pre-wrap prose prose-slate max-w-none"
-              dangerouslySetInnerHTML={{ __html: sanitizeQuestionHTML(currentAdaptiveQuestion.question_text) }}
-            />
+                <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                  <h4 className="text-lg font-semibold text-slate-900">Choose an answer</h4>
+                  <div className="mt-4 space-y-3">
+                    {options.map((option: any, index: number) => {
+                      const optionLabel = option.label || String.fromCharCode(65 + index);
+                      const optionText = option.text || option.option_text || option;
+                      const optionDisplayText =
+                        typeof optionText === 'string'
+                          ? optionText
+                          : optionText != null
+                          ? String(optionText)
+                          : '';
+                      const optionHtml = sanitizeQuestionHTML(optionDisplayText);
+                      const isSelected = adaptiveQuizAnswer === optionLabel;
+                      const normalizedOptionLabel = optionLabel.trim().toUpperCase();
+                      const normalizedOptionText = normalizeHintMessage(optionDisplayText);
+                      const comparableOptionText =
+                        normalizedOptionText.length > 0 ? normalizedOptionText.toLowerCase() : undefined;
+                      const optionMarkedCorrect = isOptionMarkedCorrect(option);
+                      const matchesLabel =
+                        Boolean(correctOptionLabel) && normalizedOptionLabel === correctOptionLabel;
+                      const matchesText =
+                        Boolean(correctOptionText) &&
+                        Boolean(comparableOptionText) &&
+                        comparableOptionText === correctOptionText;
+                      const isCorrectOption = optionMarkedCorrect || matchesLabel || matchesText;
+                      const shouldHighlightCorrect = showOptionFeedback && isCorrectOption;
+                      const shouldHighlightIncorrectSelection =
+                        showOptionFeedback && !lastAnswerCorrect && isSelected && !isCorrectOption;
 
-            <div className="flex items-center gap-2 mb-4">
-              <span className={`text-xs font-medium px-2 py-1 rounded-full ${
-                currentAdaptiveQuestion.difficulty === 'easy' ? 'bg-green-100 text-green-700' :
-                currentAdaptiveQuestion.difficulty === 'medium' ? 'bg-yellow-100 text-yellow-700' :
-                'bg-red-100 text-red-700'
-              }`}>
-                {currentAdaptiveQuestion.difficulty || 'N/A'}
-              </span>
-            </div>
+                      let optionStateClass =
+                        'border-slate-200 bg-white hover:border-indigo-300 hover:bg-indigo-50/50';
+                      if (shouldHighlightCorrect) {
+                        optionStateClass = 'border-emerald-400 bg-emerald-50';
+                      } else if (shouldHighlightIncorrectSelection) {
+                        optionStateClass = 'border-rose-400 bg-rose-50';
+                      } else if (isSelected) {
+                        optionStateClass = 'border-indigo-500 bg-indigo-50';
+                      }
 
-          <div className="space-y-3">
-              {options.map((option: any, index: number) => {
-                const optionLabel = option.label || String.fromCharCode(65 + index); // A, B, C, D...
-                const optionText = option.text || option.option_text || option;
-                const optionDisplayText =
-                  typeof optionText === 'string'
-                    ? optionText
-                    : optionText != null
-                    ? String(optionText)
-                    : '';
-                const optionHtml = sanitizeQuestionHTML(optionDisplayText);
-                const isSelected = adaptiveQuizAnswer === optionLabel;
-                const normalizedOptionLabel = optionLabel.trim().toUpperCase();
-                const normalizedOptionText = normalizeHintMessage(optionDisplayText);
-                const comparableOptionText =
-                  normalizedOptionText.length > 0 ? normalizedOptionText.toLowerCase() : undefined;
-                const optionMarkedCorrect = isOptionMarkedCorrect(option);
-                const matchesLabel =
-                  Boolean(correctOptionLabel) && normalizedOptionLabel === correctOptionLabel;
-                const matchesText =
-                  Boolean(correctOptionText) &&
-                  Boolean(comparableOptionText) &&
-                  comparableOptionText === correctOptionText;
-                const isCorrectOption = optionMarkedCorrect || matchesLabel || matchesText;
-                const shouldHighlightCorrect = showOptionFeedback && isCorrectOption;
-                const shouldHighlightIncorrectSelection =
-                  showOptionFeedback && !lastAnswerCorrect && isSelected && !isCorrectOption;
+                      let indicatorClass = 'border-slate-300';
+                      if (shouldHighlightCorrect) {
+                        indicatorClass = 'border-emerald-500 bg-emerald-500';
+                      } else if (shouldHighlightIncorrectSelection) {
+                        indicatorClass = 'border-rose-500 bg-rose-500';
+                      } else if (isSelected) {
+                        indicatorClass = 'border-indigo-500 bg-indigo-500';
+                      }
 
-                let optionStateClass =
-                  'border-gray-200 bg-white hover:border-indigo-300 hover:bg-indigo-50/50';
-                if (shouldHighlightCorrect) {
-                  optionStateClass = 'border-green-500 bg-green-50';
-                } else if (shouldHighlightIncorrectSelection) {
-                  optionStateClass = 'border-red-400 bg-red-50';
-                } else if (isSelected) {
-                  optionStateClass = 'border-indigo-500 bg-indigo-50';
-                }
+                      const showIndicatorDot = isSelected || shouldHighlightCorrect;
 
-                let indicatorClass = 'border-gray-300';
-                if (shouldHighlightCorrect) {
-                  indicatorClass = 'border-green-500 bg-green-500';
-                } else if (shouldHighlightIncorrectSelection) {
-                  indicatorClass = 'border-red-500 bg-red-500';
-                } else if (isSelected) {
-                  indicatorClass = 'border-indigo-500 bg-indigo-500';
-                }
+                      return (
+                        <button
+                          key={optionLabel}
+                          onClick={() => setAdaptiveQuizAnswer(optionLabel)}
+                          disabled={submittingAdaptiveAnswer || showAdaptiveExplanation}
+                          className={`w-full rounded-xl border-2 p-4 text-left transition ${optionStateClass} disabled:cursor-not-allowed disabled:opacity-50`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div
+                              className={`h-5 w-5 rounded-full border-2 flex items-center justify-center ${indicatorClass}`}
+                            >
+                              {showIndicatorDot && <div className="h-2 w-2 rounded-full bg-white" />}
+                            </div>
+                            <span
+                              className="text-lg text-slate-900 whitespace-pre-wrap"
+                              dangerouslySetInnerHTML={{ __html: optionHtml }}
+                              aria-label={optionDisplayText}
+                            />
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
 
-                const showIndicatorDot = isSelected || shouldHighlightCorrect;
-
-                return (
-                  <button
-                    key={optionLabel}
-                    onClick={() => setAdaptiveQuizAnswer(optionLabel)}
-                    disabled={submittingAdaptiveAnswer || showAdaptiveExplanation}
-                    className={`w-full text-left p-4 rounded-lg border-2 transition ${optionStateClass} disabled:opacity-50 disabled:cursor-not-allowed`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div
-                        className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${indicatorClass}`}
-                      >
-                        {showIndicatorDot && <div className="w-2 h-2 bg-white rounded-full"></div>}
+                  {showAdaptiveExplanation && lastAnswerCorrect !== null && (
+                    <div
+                      className={`mt-4 rounded-xl border p-3 text-sm ${
+                        lastAnswerCorrect
+                          ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                          : 'border-rose-200 bg-rose-50 text-rose-800'
+                      }`}
+                    >
+                      <div className="font-semibold">
+                        {lastAnswerCorrect ? 'Nice work!' : 'Try again'}
                       </div>
-                      <span
-                        className="text-gray-900 whitespace-pre-wrap"
-                        dangerouslySetInnerHTML={{ __html: optionHtml }}
-                        aria-label={optionDisplayText}
-                      />
+                      {currentAdaptiveQuestion.explanation && (
+                        <div
+                          className="mt-2 text-sm text-slate-700 prose prose-sm prose-slate max-w-none"
+                          dangerouslySetInnerHTML={{
+                            __html: sanitizeQuestionHTML(currentAdaptiveQuestion.explanation),
+                          }}
+                        />
+                      )}
+                      {!lastAnswerCorrect && currentAdaptiveQuestion.correct_answer && (
+                        <p className="mt-2 text-sm text-slate-700">
+                          Correct answer:{' '}
+                          <span className="font-medium">{currentAdaptiveQuestion.correct_answer}</span>
+                        </p>
+                      )}
                     </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+                  )}
 
-          {showAdaptiveExplanation && lastAnswerCorrect !== null && (
-            <div className={`mb-6 p-4 rounded-lg border ${
-              lastAnswerCorrect
-                ? 'bg-green-50 border-green-200'
-                : 'bg-red-50 border-red-200'
-            }`}>
-              <div className="flex items-center gap-2 mb-2">
-                {lastAnswerCorrect ? (
-                  <CheckCircle className="h-5 w-5 text-green-600" />
-                ) : (
-                  <Circle className="h-5 w-5 text-red-600" />
-                )}
-                <span className={`font-semibold ${lastAnswerCorrect ? 'text-green-900' : 'text-red-900'}`}>
-                  {lastAnswerCorrect ? 'Correct!' : 'Incorrect'}
-                </span>
+                  <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+                    <button
+                      onClick={handleAdaptiveQuizSubmit}
+                      disabled={!adaptiveQuizAnswer || submittingAdaptiveAnswer || showAdaptiveExplanation}
+                      className="rounded-full bg-indigo-600 px-5 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {submittingAdaptiveAnswer ? 'Checking...' : 'Check my answer'}
+                    </button>
+                    <button
+                      onClick={handleAdaptiveQuizNext}
+                      disabled={
+                        submittingAdaptiveAnswer ||
+                        !showAdaptiveExplanation ||
+                        !pendingAdaptiveQuestion
+                      }
+                      className="rounded-full border border-slate-200 px-5 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {submittingAdaptiveAnswer ? (
+                        <div className="h-5 w-5 rounded-full border-2 border-indigo-400 border-t-transparent animate-spin" />
+                      ) : (
+                        <span>Next</span>
+                      )}
+                    </button>
+                  </div>
+
+                  {canJumpToPracticeExercise && (
+                    <div className="mt-5 border-t border-slate-200 pt-4">
+                      <button
+                        type="button"
+                        onClick={handleJumpToPracticeExercise}
+                        className="rounded-full border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
+                      >
+                        Go to Practice
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
-              {currentAdaptiveQuestion.explanation && (
-                <div
-                  className="text-sm text-gray-700 prose prose-sm prose-slate max-w-none"
-                  dangerouslySetInnerHTML={{
-                    __html: sanitizeQuestionHTML(currentAdaptiveQuestion.explanation),
-                  }}
-                />
-              )}
-              {!lastAnswerCorrect && currentAdaptiveQuestion.correct_answer && (
-                <p className="text-sm text-gray-700 mt-2">
-                  Correct answer: <span className="font-medium">{currentAdaptiveQuestion.correct_answer}</span>
-                </p>
-              )}
             </div>
-          )}
-
-          <div className="flex justify-end gap-3">
-            <button
-              onClick={handleAdaptiveQuizSubmit}
-              disabled={!adaptiveQuizAnswer || submittingAdaptiveAnswer || showAdaptiveExplanation}
-              className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-            >
-              <span>{submittingAdaptiveAnswer ? 'Submit' : 'Submit'}</span>
-            </button>
-            <button
-              onClick={handleAdaptiveQuizNext}
-              disabled={
-                submittingAdaptiveAnswer ||
-                !showAdaptiveExplanation ||
-                !pendingAdaptiveQuestion
-              }
-              className="px-6 py-2.5 bg-white border border-indigo-200 text-indigo-600 hover:bg-indigo-50 rounded-lg font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {/* sow the soinner while waiting for next question */}
-              {submittingAdaptiveAnswer ? (
-                <div className="inline-block h-5 w-5 rounded-full border-2 border-indigo-400 border-t-transparent animate-spin"></div>
-              ) : (
-                <span>Next</span>
-              )}
-              {/* <span>Next</span> */}
-            </button>
           </div>
-          {canJumpToPracticeExercise && (
-            <div className="mt-6 flex items-center justify-between gap-3 border-t border-slate-100/70 pt-4">
-              <button
-                type="button"
-                onClick={handlePrevResource}
-                className="flex-1 rounded-full border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition hover:border-slate-300 hover:text-slate-800"
-              >
-                Previous
-              </button>
-              <button
-                type="button"
-                onClick={handleJumpToPracticeExercise}
-                className="flex-1 rounded-full bg-gradient-to-r from-green-500 to-teal-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:from-green-600 hover:to-teal-600"
-              >
-                Go to Practice Exercise
-              </button>
-            </div>
-          )}
-        </div>
-      );
+        );
     }
 
     // Loading state
@@ -16720,7 +16641,38 @@ export function SubjectLearningInterface({
         : headerSubtitle;
     const businessContext = activeExercise?.content || "";
 
-    const header = (
+    const focusMode = true;
+    const progressPercent =
+      questionList.length > 0 ? ((currentQuestionIndex + 1) / questionList.length) * 100 : 0;
+
+    const header = focusMode ? (
+      <div className="border-b border-slate-200 bg-white px-6 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">
+              Practice
+            </p>
+            <h2 className="mt-1 text-lg font-semibold text-slate-900">
+              Question {currentQuestionIndex + 1} of {questionList.length}
+            </h2>
+          </div>
+          {isEmbedded && (
+            <button
+              onClick={handleExitEmbeddedExercise}
+              className="rounded-full border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
+            >
+              Exit
+            </button>
+          )}
+        </div>
+        <div className="mt-3 h-2 w-full rounded-full bg-slate-100">
+          <div
+            className="h-2 rounded-full bg-indigo-500 transition-all duration-300"
+            style={{ width: `${progressPercent}%` }}
+          />
+        </div>
+      </div>
+    ) : (
       <div className="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-4">
         <div className="min-w-0 flex-1">
           <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">
@@ -16782,7 +16734,7 @@ export function SubjectLearningInterface({
     );
 
     const questionTabsBar =
-      questionList.length > 0 ? (
+      !focusMode && questionList.length > 0 ? (
         <div className="border-b border-slate-200 bg-slate-50 px-6 py-3">
           <div className="flex flex-wrap gap-2">
             {questionList.map((questionItem: any, index: number) => {
@@ -16816,7 +16768,125 @@ export function SubjectLearningInterface({
           </div>
         </div>
       ) : null;
-    const content = (
+    const content = focusMode ? (
+      <div className="flex-1 overflow-auto bg-slate-50 px-6 py-6">
+        <div className="mx-auto flex w-full max-w-none flex-col gap-6">
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <h3 className="text-xl font-semibold text-slate-900">Question</h3>
+            {questionHtml ? (
+              <div
+                className="mt-3 text-lg leading-relaxed text-slate-700 prose prose-lg prose-slate max-w-none"
+                dangerouslySetInnerHTML={{ __html: questionHtml }}
+              />
+            ) : (
+              <p className="mt-3 text-lg leading-relaxed text-slate-700">
+                {question.text || question.question_text}
+              </p>
+            )}
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h4 className="text-lg font-semibold text-slate-900">Your answer</h4>
+                <p className="mt-1 text-sm text-slate-500">
+                  Share your thinking and final answer.
+                </p>
+              </div>
+              {allowWorkspaceHint && (
+                <button
+                  onClick={handleWorkspaceHintClick}
+                  disabled={!userId || isRequestingWorkspaceHint}
+                  className="inline-flex items-center gap-2 rounded-full border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isRequestingWorkspaceHint ? (
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-amber-400 border-t-transparent" />
+                  ) : (
+                    <Lightbulb className="h-3.5 w-3.5" />
+                  )}
+                  <span>{isRequestingWorkspaceHint ? "Hinting..." : "Need a hint?"}</span>
+                </button>
+              )}
+            </div>
+            <textarea
+              value={worksheetSolution}
+              onChange={(event) => setWorksheetSolution(event.target.value)}
+              placeholder="Type your answer here..."
+              rows={6}
+              className="mt-4 w-full resize-none rounded-xl border border-slate-200 bg-white px-4 py-3 text-lg leading-8 text-slate-700 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+            />
+            <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
+              {allowWorkspaceSubmission && (
+                <button
+                  onClick={handleWorkspaceSubmitClick}
+                  disabled={isSubmittingWorkspace || !worksheetSolution.trim()}
+                  className="rounded-full bg-indigo-600 px-5 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isSubmittingWorkspace ? "Checking..." : "Check my answer"}
+                </button>
+              )}
+            </div>
+            {worksheetHint && (
+              <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-amber-700">
+                  <Lightbulb className="h-3.5 w-3.5" />
+                  <span>{"Hint"}</span>
+                </div>
+                <p className="mt-2 text-sm text-amber-900 whitespace-pre-wrap">
+                  {worksheetHint.message}
+                </p>
+              </div>
+            )}
+            <div className="mt-4">
+              {isSubmittingWorkspace ? (
+                <div className="flex items-center gap-2 text-sm text-indigo-600">
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-indigo-300 border-t-transparent" />
+                  <span>Evaluating your answer...</span>
+                </div>
+              ) : worksheetFeedback ? (
+                <div
+                  className={`rounded-xl border px-4 py-3 ${
+                    worksheetFeedback.isCorrect
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                      : "border-amber-200 bg-amber-50 text-amber-900"
+                  }`}
+                >
+                  <p className="text-sm font-semibold">
+                    {worksheetFeedback.verdict || (worksheetFeedback.isCorrect ? "Nice work!" : "Try again")}
+                  </p>
+                  {worksheetFeedback.feedback && (
+                    <p className="mt-2 text-sm leading-relaxed text-slate-700">
+                      {worksheetFeedback.feedback}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <p className="text-sm text-slate-500">
+                  
+                </p>
+              )}
+            </div>
+            {questionList.length > 1 && (
+              <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+                <button
+                  onClick={() => handleSelectExerciseQuestionTab(currentQuestionIndex - 1)}
+                  disabled={currentQuestionIndex <= 0}
+                  className="rounded-full border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Previous
+                </button>
+                <button
+                  onClick={() => handleSelectExerciseQuestionTab(currentQuestionIndex + 1)}
+                  disabled={currentQuestionIndex >= questionList.length - 1}
+                  className="rounded-full border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Next
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    ) : (
       <div className="grid min-h-[520px] flex-1 grid-cols-1 overflow-hidden md:grid-cols">
         <div className="flex min-h-0 flex-col bg-slate-50">
           <div className="border-b border-slate-200 bg-white px-6 py-5 shadow-sm">
@@ -16887,192 +16957,7 @@ export function SubjectLearningInterface({
             )} */}
           </div>
           <div className="flex-1 overflow-auto px-6 py-5">
-            {questionType === "sql" || questionType === "python" || questionType === "statistics" || questionType === "google_sheets" || questionType === "text"  ? (
-              <div className="flex min-h-full flex-col gap-4">
-                <div className="flex items-center justify-between gap-3">
-                  <h4 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">
-                    Dataset Preview
-                  </h4>
-                  {duckDbDatasetsForQuestion.length > 0 && (
-                    <div className="flex flex-wrap justify-end gap-2">
-                      {duckDbDatasetsForQuestion.map((dataset) => {
-                        const isActive = dataset.id === activeDatasetId;
-                        let label =
-                          dataset.resolvedTableName;
-                        // check for label length and pass only it is greater than 0
-                        if (!label || label.length === 0) {
-                          return null;
-                        }
-                        // if(isActive){
-                          return (
-                            <button
-                              key={dataset.id}
-                              onClick={() => setActiveDatasetId(dataset.id)}
-                              className={`rounded-full px-3 py-1 text-xs font-medium transition ${
-                                isActive
-                                  ? "bg-indigo-600 text-white shadow-sm"
-                                  : "bg-white text-slate-600 ring-1 ring-slate-200 hover:text-indigo-600"
-                              }`}
-                            >
-                              {label}
-                            </button>
-                          );
-                        // }
-                      })}
-                    </div>
-                  )}
-                </div>
-                <div className="flex-1 rounded-2xl border border-slate-200 bg-white shadow-sm">
-                  <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3">
-                    <div className="flex flex-col">
-                      <span className="text-sm font-semibold text-slate-800">
-                        {activeDuckDbDataset?.resolvedTableName || "Dataset"}
-                      </span>
-                      <div className="mt-1 flex flex-wrap gap-2 text-xs text-slate-500">
-                        {(activeDuckDbDataset?.resolvedTableName ?? activeDuckDbDataset?.table_name) && (
-                          <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-emerald-700">
-                            {questionType === "python" ? "Dataframe" : "Table"}: {questionType === "python" ? activeDuckDbDataset.resolvedTableName.toLowerCase() ?? activeDuckDbDataset.table_name.toLowerCase() : activeDuckDbDataset.resolvedTableName ?? activeDuckDbDataset.table_name}
-                          </span>
-                        )}
-                        {activeDuckDbDataset?.columns?.length ? (
-                          <span className="rounded-full bg-slate-100 px-2.5 py-0.5">
-                            Columns: {activeDuckDbDataset.columns.slice(0, 6).join(", ")}
-                            {activeDuckDbDataset.columns.length > 6
-                              ? ` +${activeDuckDbDataset.columns.length - 6}`
-                              : ""}
-                          </span>
-                        ) : null}
-                      </div>
-                    </div>
-                    {(datasetPreview || loadingDatasetPreview) && (
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() =>
-                            downloadDatasetPreview({
-                              fileName:
-                                activeDuckDbDataset?.resolvedTableName ||
-                                activeDuckDbDataset?.name ||
-                                activeDuckDbDataset?.table_name ||
-                                "dataset",
-                              worksheetName:
-                                activeDuckDbDataset?.resolvedTableName ||
-                                activeDuckDbDataset?.table_name ||
-                                activeDuckDbDataset?.name ||
-                                "Dataset",
-                            })
-                          }
-                          disabled={!datasetPreview || downloadingDataset}
-                          className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          <Download className="h-3.5 w-3.5" />
-                          <span>{downloadingDataset ? "Preparing..." : "Download .xlsx"}</span>
-                        </button>
-                        {loadingDatasetPreview && (
-                          <div className="flex items-center gap-2 text-xs text-indigo-600">
-                            <div className="h-4 w-4 animate-spin rounded-full border-2 border-indigo-300 border-t-transparent" />
-                            <span>Preparing preview...</span>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex-1 overflow-hidden">
-                    
-                    {datasetPreview ? (
-                      <div className="max-h-[320px] px-5 py-4 overflow-x-auto overflow-y-auto">
-                        <table className="min-w-full border-collapse text-xs text-slate-700">
-                          <thead className="sticky top-0 bg-slate-100">
-                            <tr>
-                                {datasetPreview.columns.map((column) => {
-                                  const isSorted =
-                                    datasetSortConfig?.column === column;
-                                  return (
-                                    <th
-                                      key={column}
-                                      className="border border-slate-200 px-3 py-2 text-left font-semibold"
-                                    >
-                                      <button
-                                        type="button"
-                                        onClick={() => handleDatasetColumnSort(column)}
-                                        className="flex w-full items-center justify-between gap-2 text-left"
-                                      >
-                                        <ColumnHeaderWithType
-                                          columnName={column}
-                                          columnType={datasetPreview.columnTypes?.[column]}
-                                        />
-                                        <span className="text-[10px] text-slate-400">
-                                          {isSorted
-                                            ? datasetSortConfig?.direction === "asc"
-                                              ? "↑"
-                                              : "↓"
-                                            : "↕"}
-                                        </span>
-                                      </button>
-                                    </th>
-                                  );
-                                })}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {datasetRowsForTable.map((row, rowIndex) => (
-                              <tr
-                                key={rowIndex}
-                                className={rowIndex % 2 === 0 ? "bg-white" : "bg-slate-50"}
-                              >
-                                  {row.map((cell, cellIndex) => {
-                                    const columnName = datasetPreview.columns[cellIndex];
-                                    const columnType = datasetPreview.columnTypes?.[columnName];
-                                    const formattedValue = formatCellValue(cell, columnName, columnType);
-                                    return (
-                                      <td
-                                        key={`${rowIndex}-${cellIndex}`}
-                                        className="border border-slate-200 px-3 py-2 font-mono text-[11px] text-slate-600"
-                                      >
-                                        <span
-                                          className="block max-w-[140px] truncate"
-                                          title={formattedValue}
-                                        >
-                                          {formattedValue}
-                                        </span>
-                                      </td>
-                                    );
-                                  })}
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    ) : (
-                      <div className="flex h-full items-center justify-center px-5 py-10 text-center">
-                        <p className="text-sm text-slate-500">
-                          {datasetPreviewError
-                            ? datasetPreviewError
-                            : loadingDatasetPreview
-                            ? "Preparing dataset preview..."
-                            : duckDbDatasetsForQuestion.length === 0
-                            ? "No datasets available for this question."
-                            : "Preview not available. Try running the dataset creation SQL from the editor."}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                  {activeDuckDbDataset?.creation_sql && (
-                    <div className="border-t border-slate-200 bg-slate-50 px-5 py-3">
-                      <button
-                        onClick={() => {
-                          if (activeDuckDbDataset?.creation_sql) {
-                            setSqlCode(activeDuckDbDataset.creation_sql);
-                          }
-                        }}
-                        className="text-xs font-medium text-indigo-600 hover:text-indigo-700"
-                      >
-                        {/* Load {config.name} code into Editor */}
-                      </button>
-                    </div>
-                  )}
-                </div>
-              {(questionType === "google_sheets" || questionType === "statistics") && (
-                <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
                   <div className="flex flex-col gap-2 border-b border-slate-200 px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <h4 className="text-sm font-semibold text-slate-800">Your Submission</h4>
@@ -17119,9 +17004,7 @@ export function SubjectLearningInterface({
                     </div>
                   </div>
                 </div>
-              )}
-               {(questionType === "google_sheets" || questionType === "statistics") && (
-                 <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+                <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
                    <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3">
                      <h4 className="text-sm font-semibold text-slate-800">AI Feedback</h4>
                      {worksheetFeedback && (
@@ -17175,765 +17058,10 @@ export function SubjectLearningInterface({
                     )}
                   </div>
                 </div>
-              )}
-              </div>
-            ) : questionType === "python" || questionType === "statistics" ? (
-              pythonDatasetOptions.length > 0 ? (
-                <div className="flex min-h-full flex-col gap-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <h4 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">
-                      Dataset Preview
-                    </h4>
-                    {pythonDatasetOptions.length > 1 && (
-                      <div className="flex flex-wrap justify-end gap-2">
-                        {pythonDatasetOptions.map((option) => {
-                          const isActive = option.id === activeDatasetId;
-                          const detail = pythonDatasetDetails[option.baseDatasetId];
-                          const label = option.label;
-                          const tooltip =
-                            detail?.originalName && detail.originalName !== label
-                              ? detail.originalName
-                              : option.originalName && option.originalName !== label
-                              ? option.originalName
-                              : undefined;
-                          return (
-                            <button
-                              key={option.id}
-                              onClick={() => setActiveDatasetId(option.id)}
-                              title={tooltip}
-                              className={`rounded-full px-3 py-1 text-xs font-medium transition ${
-                                isActive
-                                  ? "bg-indigo-600 text-white shadow-sm"
-                                  : "bg-white text-slate-600 ring-1 ring-slate-200 hover:text-indigo-600"
-                              }`}
-                            >
-                              {label}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex-1 rounded-2xl border border-slate-200 bg-white shadow-sm">
-                    <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3">
-                      <div className="flex flex-col">
-                      <span className="text-sm font-semibold text-slate-800">
-                        {activePythonDatasetDetail?.displayName ||
-                          availablePythonDatasets.find(
-                            (dataset) => dataset.id === activePythonBaseDatasetId,
-                          )?.name ||
-                          pythonDatasetOptions.find((option) => option.id === activeDatasetId)?.label ||
-                          "Dataset"}
-                        </span>
-                        {activePythonDatasetDetail?.tableNames?.length ? (
-                          <p className="mt-1 text-xs text-slate-500">
-                            Table
-                            {activePythonDatasetDetail.tableNames.length > 1 ? "s" : ""}:{" "}
-                            <span className="font-mono">
-                              {activePythonDatasetDetail.tableNames.join(", ")}
-                            </span>
-                          </p>
-                        ) : null}
-                        {activePythonDatasetDetail?.originalName &&
-                          activePythonDatasetDetail.originalName !==
-                            (activePythonDatasetDetail.displayName || activePythonDatasetDetail.name) && (
-                            <p className="mt-1 text-xs text-slate-500">
-                              Original label: {activePythonDatasetDetail.originalName}
-                            </p>
-                          )}
-                        <div className="mt-1 flex flex-wrap gap-2 text-xs text-slate-500">
-                          {activePythonDatasetDetail?.pythonVariable && (
-                            <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-emerald-700">
-                              Variable: {activePythonDatasetDetail.pythonVariable}
-                            </span>
-                          )}
-                          {typeof activePythonDatasetDetail?.rowCount === "number" && (
-                            <span className="rounded-full bg-slate-100 px-2.5 py-0.5">
-                              Rows: {activePythonDatasetDetail.rowCount}
-                            </span>
-                          )}
-                          {/* {activePythonDatasetStatus?.state === "loaded" && (
-                            <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-emerald-700">
-                              Loaded into Pyodide
-                            </span>
-                          )} */}
-                          {activePythonDatasetStatus?.state === "loading" && (
-                            <span className="rounded-full bg-indigo-100 px-2.5 py-0.5 text-indigo-700">
-                              Loading into Pyodide...
-                            </span>
-                          )}
-                          {activePythonDatasetStatus?.state === "failed" && (
-                            <span className="rounded-full bg-rose-100 px-2.5 py-0.5 text-rose-700">
-                              Load failed
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      {(datasetPreview || loadingDatasetPreview) && (
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => {
-                              const selectedOption =
-                                pythonDatasetOptions.find((option) => option.id === activeDatasetId) ??
-                                pythonDatasetOptions[0];
-                              const definition =
-                                availablePythonDatasets.find(
-                                  (dataset) => dataset.id === selectedOption?.baseDatasetId,
-                                ) ??
-                                availablePythonDatasets[0] ??
-                                null;
-                              downloadDatasetPreview({
-                                fileName:
-                                  activePythonDatasetDetail?.displayName ||
-                                  definition?.name ||
-                                  definition?.table_name ||
-                                  selectedOption?.label ||
-                                  "dataset",
-                                worksheetName:
-                                  activePythonDatasetDetail?.pythonVariable ||
-                                  definition?.table_name ||
-                                  activePythonDatasetDetail?.displayName ||
-                                  definition?.name ||
-                                  selectedOption?.label ||
-                                  "Dataset",
-                              });
-                            }}
-                            disabled={!datasetPreview || downloadingDataset}
-                            className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-                          >
-                            <Download className="h-3.5 w-3.5" />
-                            <span>{downloadingDataset ? "Preparing..." : "Download .xlsx"}</span>
-                          </button>
-                          {loadingDatasetPreview && (
-                            <div className="flex items-center gap-2 text-xs text-indigo-600">
-                              <div className="h-4 w-4 animate-spin rounded-full border-2 border-indigo-300 border-t-transparent" />
-                              <span>Preparing preview...</span>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex-1 overflow-hidden">
-                      {datasetPreview ? (
-                        <div className="max-h-[320px] px-5 py-4 overflow-x-auto overflow-y-auto">
-                          <table className="min-w-full border-collapse text-xs text-slate-700">
-                            <thead className="sticky top-0 bg-slate-100">
-                              <tr>
-                                {datasetPreview.columns.map((column) => (
-                                  <th
-                                    key={column}
-                                    className="border border-slate-200 px-3 py-2 text-left font-semibold"
-                                  >
-                                    <ColumnHeaderWithType
-                                      columnName={column}
-                                      columnType={datasetPreview.columnTypes?.[column]}
-                                    />
-                                  </th>
-                                ))}
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {datasetPreview.rows.map((row, rowIndex) => (
-                                <tr
-                                  key={rowIndex}
-                                  className={rowIndex % 2 === 0 ? "bg-white" : "bg-slate-50"}
-                                >
-                                  {row.map((cell, cellIndex) => {
-                                    const columnName = datasetPreview.columns[cellIndex];
-                                    const columnType = datasetPreview.columnTypes?.[columnName];
-                                    const formattedValue = formatCellValue(cell, columnName, columnType);
-                                    return (
-                                      <td
-                                        key={`${rowIndex}-${cellIndex}`}
-                                        className="border border-slate-200 px-3 py-2 font-mono text-[11px] text-slate-600"
-                                      >
-                                        <span
-                                          className="block max-w-[140px] truncate"
-                                          title={formattedValue}
-                                        >
-                                          {formattedValue}
-                                        </span>
-                                      </td>
-                                    );
-                                  })}
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      ) : (
-                        <div className="flex h-full items-center justify-center px-5 py-10 text-center">
-                          <p className="text-sm text-slate-500">
-                            {datasetPreviewError
-                              ? datasetPreviewError
-                              : loadingDatasetPreview
-                              ? "Preparing dataset preview..."
-                              : pythonDatasetOptions.length === 0
-                              ? "No datasets available for this question."
-                              : "Dataset preview is not available yet for this Python question."}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                    {(activePythonDatasetStatus?.message || activePythonDatasetDetail?.description) && (
-                      <div className="border-t border-slate-200 bg-slate-50 px-5 py-3 text-xs text-slate-600">
-                        {activePythonDatasetStatus?.message && (
-                          <p className="mb-1 text-rose-600">{activePythonDatasetStatus.message}</p>
-                        )}
-                        {activePythonDatasetDetail?.description && (
-                          <p>{activePythonDatasetDetail.description}</p>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ) : (
-                <div className="flex h-full flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white text-center shadow-sm">
-                  <p className="px-6 text-sm text-slate-500">
-                    No datasets were provided for this Python question.
-                  </p>
-                </div>
-              )
-            ) : questionType === "google_sheets" ? (
-              <div className="flex min-h-full flex-col gap-4">
-                <div className="flex items-center justify-between gap-3">
-                  <h4 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">
-                    Dataset Preview
-                  </h4>
-                  {spreadsheetDatasets.length > 1 && (
-                    <div className="flex flex-wrap justify-end gap-2">
-                      {spreadsheetDatasets.map((dataset) => {
-                        const isActive = dataset.id === activeDatasetId;
-                        const label = dataset.name || "Dataset";
-                        const tooltip =
-                          dataset.originalName && dataset.originalName !== label
-                            ? dataset.originalName
-                            : undefined;
-                        return (
-                          <button
-                            key={dataset.id}
-                            onClick={() => setActiveDatasetId(dataset.id)}
-                            title={tooltip}
-                            className={`rounded-full px-3 py-1 text-xs font-medium transition ${
-                              isActive
-                                ? "bg-indigo-600 text-white shadow-sm"
-                                : "bg-white text-slate-600 ring-1 ring-slate-200 hover:text-indigo-600"
-                            }`}
-                          >
-                            {label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-                <div className="flex-1 rounded-2xl border border-slate-200 bg-white shadow-sm">
-                  <div className="flex flex-col gap-2 border-b border-slate-200 px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                      <span className="text-sm font-semibold text-slate-800">
-                        {activeSpreadsheetDataset?.name || "Dataset"}
-                      </span>
-                      {activeSpreadsheetDataset?.tableNames?.length ? (
-                        <p className="mt-1 text-xs text-slate-500">
-                          Table
-                          {activeSpreadsheetDataset.tableNames.length > 1 ? "s" : ""}:{" "}
-                          <span className="font-mono">
-                            {activeSpreadsheetDataset.tableNames.join(", ")}
-                          </span>
-                        </p>
-                      ) : null}
-                      {activeSpreadsheetDataset?.originalName &&
-                        activeSpreadsheetDataset.originalName !== activeSpreadsheetDataset.name && (
-                          <p className="mt-1 text-xs text-slate-500">
-                            Original label: {activeSpreadsheetDataset.originalName}
-                          </p>
-                        )}
-                      {activeSpreadsheetDataset?.description && (
-                        <p className="mt-1 text-xs text-slate-500">
-                          {activeSpreadsheetDataset.description}
-                        </p>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() =>
-                          downloadDatasetPreview({
-                            fileName:
-                              activeSpreadsheetDataset?.name ||
-                              selectedQuestionForPopup?.exerciseTitle ||
-                              "dataset",
-                            worksheetName: activeSpreadsheetDataset?.name || "Dataset",
-                          })
-                        }
-                        disabled={!datasetPreview || downloadingDataset}
-                        className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        <Download className="h-3.5 w-3.5" />
-                        <span>{downloadingDataset ? "Preparing..." : "Download .xlsx"}</span>
-                      </button>
-                      {loadingDatasetPreview && (
-                        <div className="flex items-center gap-2 text-xs text-indigo-600">
-                          <div className="h-4 w-4 animate-spin rounded-full border-2 border-indigo-300 border-t-transparent" />
-                          <span>Preparing preview...</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex-1 overflow-hidden">
-                    {datasetPreview ? (
-                      <div className="max-h-[320px] px-5 py-4 overflow-x-auto overflow-y-auto">
-                        <table className="min-w-full border-collapse text-xs text-slate-700">
-                          <thead className="sticky top-0 bg-slate-100">
-                            <tr>
-                                {datasetPreview.columns.map((column) => (
-                                  <th
-                                    key={column}
-                                    className="border border-slate-200 px-3 py-2 text-left font-semibold"
-                                  >
-                                    <ColumnHeaderWithType
-                                      columnName={column}
-                                      columnType={datasetPreview.columnTypes?.[column]}
-                                    />
-                                  </th>
-                                ))}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {datasetPreview.rows.map((row, rowIndex) => (
-                              <tr
-                                key={rowIndex}
-                                className={rowIndex % 2 === 0 ? "bg-white" : "bg-slate-50"}
-                              >
-                                {row.map((cell, cellIndex) => {
-                                  const columnName = datasetPreview.columns[cellIndex];
-                                  const columnType = datasetPreview.columnTypes?.[columnName];
-                                  const formattedValue = formatCellValue(cell, columnName, columnType);
-                                  return (
-                                    <td
-                                      key={`${rowIndex}-${cellIndex}`}
-                                      className="border border-slate-200 px-3 py-2 font-mono text-[11px] text-slate-600"
-                                    >
-                                      <span
-                                        className="block max-w-[140px] truncate"
-                                        title={formattedValue}
-                                      >
-                                        {formattedValue}
-                                      </span>
-                                    </td>
-                                  );
-                                })}
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    ) : (
-                      <div className="flex h-full items-center justify-center px-5 py-10 text-center">
-                        <p className="text-sm text-slate-500">
-                          {datasetPreviewError
-                            ? datasetPreviewError
-                            : "Dataset preview is not available yet for this activity."}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="flex h-full flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white text-center shadow-sm">
-                <p className="px-6 text-sm text-slate-500">
-                  No dataset preview for {config.name} questions.
-                </p>
-              </div>
-            )}
+            
           </div>
         </div>
-        {isSpreadsheetQuestion || selectedQuestionType === "statistics" ? (
-          <div className="flex min-h-0 flex-col bg-white">
-            <div className="border-b border-slate-200 px-6 py-5">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-lg font-semibold text-slate-900">
-                    {selectedQuestionType === "statistics" ? "Statistics Workspace" : "Google Sheets Workspace"}
-                  </h3>
-                  <p className="text-sm text-slate-500">
-                    Download the dataset, explore it in your preferred tool, capture your insights, then submit your summary below.
-                  </p>
-                </div>
-              </div>
-            </div>
-            <div className="flex-1 overflow-auto px-6 py-5">
-              <div className="space-y-4">
-                <div className="rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-3 text-sm text-indigo-700">
-                  <p>
-                    {selectedQuestionForPopup?.exerciseDescription
-                      ? selectedQuestionForPopup.exerciseDescription
-                      : "Use Google Sheets (or another analysis tool) to explore the dataset, apply any formulas you need, and capture your findings before submitting your summary below."}
-                  </p>
-                </div>
-                {/* <div className="flex flex-wrap gap-2">
-                  <button
-                    onClick={() =>
-                      downloadDatasetPreview({
-                        fileName:
-                          activeSpreadsheetDataset?.name ||
-                          selectedQuestionForPopup?.exerciseTitle ||
-                          "dataset",
-                        worksheetName: activeSpreadsheetDataset?.name || "Dataset",
-                      })
-                    }
-                    disabled={!datasetPreview || downloadingDataset}
-                    className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-slate-400"
-                  >
-                    <Download className="h-4 w-4" />
-                    <span>{downloadingDataset ? "Preparing..." : "Download Dataset"}</span>
-                  </button>
-                  <button
-                    onClick={() => markQuestionCompleted(selectedQuestionForPopup)}
-                    className="rounded-lg border border-emerald-500 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-100"
-                  >
-                    Skip & Mark Complete
-                  </button>
-                  <button
-                    onClick={() => handleNavigateExerciseQuestion(1)}
-                    disabled={!hasNextQuestion}
-                    className="flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-600 hover:border-indigo-200 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    Next
-                    <ChevronRight className="h-4 w-4" />
-                  </button>
-                </div>
-                <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                  <p className="font-semibold text-slate-700">Suggested steps</p>
-                  <ol className="mt-2 list-decimal space-y-1 pl-5">
-                    <li>Import the downloaded file into Google Sheets (or your preferred analysis tool).</li>
-                    <li>Use filters, formulas, or statistical techniques to answer the prompt.</li>
-                    <li>Record your conclusion in the submission box under the dataset preview, then submit it for grading.</li>
-                  </ol>
-                </div> */}
-              </div>
-            </div>
-          </div>
-        ) : (
-          selectedQuestionType !== "statistics" && (
-            <div className="flex min-h-0 flex-col bg-white">
-              <div className="border-b border-slate-200 px-6 py-5">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <h3 className="text-lg font-semibold text-slate-900">{config.name} Workspace {questionType === "python" ? "(Dataframes are already loaded into the workspace)" : ""}</h3>
-                    <p className="text-sm text-slate-500">
-                      Craft your solution and run it against the dataset. Output appears below.
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap items-center justify-end gap-2">
-                    {(isExecutingSql || isExecutingPython) && (
-                      <div className="flex items-center gap-2 text-xs text-indigo-600">
-                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-indigo-300 border-t-transparent" />
-                        <span>Running...</span>
-                      </div>
-                    )}
-                    {allowWorkspaceHint && (
-                      <button
-                        onClick={handleWorkspaceHintClick}
-                        disabled={!userId || isRequestingWorkspaceHint}
-                        className="flex items-center gap-2 rounded-lg border border-amber-400 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-700 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        {isRequestingWorkspaceHint ? (
-                          <div className="h-4 w-4 animate-spin rounded-full border-2 border-amber-400 border-t-transparent" />
-                        ) : (
-                          <Lightbulb className="h-4 w-4" />
-                        )}
-                        <span>{isRequestingWorkspaceHint ? "Hinting..." : "Hint"}</span>
-                      </button>
-                    )}
-                  </div>
-                </div>
-                <div className="mt-4 flex min-h-[280px] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-slate-950 shadow-inner">
-                  {/* Debug: Show current state */}
-                  {/* <div className="text-xs text-slate-400 px-5 py-2 border-b border-slate-700">
-                    Language: {codeLanguage} | SQL: {sqlCode.length}c | Python: {pythonCode.length}c
-                  </div> */}
-                  
-                  <textarea
-                    key={`${selectedQuestionForPopup?.id}-${codeLanguage}`}
-                    value={
-                      codeLanguage === 'python'
-                        ? pythonCode
-                        : sqlCode
-                    }
-                    onChange={(e) => {
-                      workspaceCodeTouchedRef.current = true;
-                      if (codeLanguage === 'python' || codeLanguage === 'statistics') {
-                        setPythonCode(e.target.value);
-                      } else {
-                        setSqlCode(e.target.value);
-                      }
-                    }}
-                    onKeyDown={handleWorkspaceCodeKeyDown}
-                    className="flex-1 resize-none bg-transparent p-5 font-mono text-sm leading-6 tracking-tight text-slate-100 outline-none placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
-                    placeholder="Start coding..."
-                    spellCheck={false}
-                  />
-                  <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-800/70 bg-slate-900/60 px-5 py-3">
-                    <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
-                      {!isPyodideReady &&
-                        (questionType === "python" || questionType === "statistics") && (
-                        <span className="rounded-full bg-slate-800 px-3 py-1">Preparing Python runtime...</span>
-                      )}
-                      {!isDuckDbReady && questionType === "sql" && (
-                        <span className="rounded-full bg-slate-800 px-3 py-1">Preparing DuckDB...</span>
-                      )}
-                      {duckDbTables.length > 0 && questionType === "sql" && (
-                        <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-emerald-700">
-                          Tables: {duckDbTables.slice(0, 4).join(", ")}
-                          {duckDbTables.length > 4 ? ` +${duckDbTables.length - 4}` : ""}
-                        </span>
-                      )}
-                      {/* {(sqlError || pythonError) && (
-                        <span className="rounded-full bg-rose-900/60 px-3 py-1 text-rose-200">
-                          {sqlError || pythonError}
-                        </span>
-                      )} */}
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        onClick={() => handleExecuteCode(
-                          codeLanguage === 'python' || codeLanguage === 'statistics'
-                            ? pythonCode
-                            : sqlCode
-                        )}
-                        disabled={
-                          isExecutingSql ||
-                          isExecutingPython ||
-                          (codeLanguage === 'python' || codeLanguage === 'statistics'
-                            ? !pythonCode.trim() || !isPyodideReady
-                            : !sqlCode.trim() || (!isDuckDbReady || isPreparingDuckDb))
-                        }
-                        className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-slate-700"
-                      >
-                        <Play className="h-4 w-4" />
-                        {isExecutingSql || isExecutingPython ? "Running..." : "Run"}
-                      </button>
-                      {allowWorkspaceSubmission && (
-                        <button
-                          onClick={handleWorkspaceSubmitClick}
-                          disabled={isSubmittingWorkspace}
-                          className="rounded-lg border border-emerald-500 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          {isSubmittingWorkspace ? "Submitting..." : "Submit"}
-                        </button>
-                      )}
-                      <button
-                        onClick={() => handleNavigateExerciseQuestion(1)}
-                        disabled={!hasNextQuestion || isPreparingDuckDb || isDuckDbLoading}
-                        className="flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-600 hover:border-indigo-200 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        Next
-                        <ChevronRight className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div className="flex-1 overflow-x-auto overflow-y-auto px-6 py-5">
-                <div className="flex h-full flex-col rounded-2xl border border-slate-200 bg-slate-950 shadow-inner">
-                  <div className="flex items-center justify-between border-b border-slate-800 px-5 py-3">
-                    <h4 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-400">Output</h4>
-                    <div className="flex items-center gap-3">
-                      {(isDuckDbLoading || isPreparingDuckDb) && (
-                        <div className="flex items-center gap-2 text-xs text-indigo-300">
-                          <div className="h-4 w-4 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />
-                          <span>{isDuckDbLoading ? "Initializing DuckDB..." : "Loading datasets..."}</span>
-                        </div>
-                      )}
-
-                      {isPyodideLoading && (
-                        <div className="flex items-center gap-2 text-xs text-indigo-300">
-                          <div className="h-4 w-4 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />
-                          <span>Initializing Python runtime...</span>
-                        </div>
-                      )}
-
-                      <button
-                        onClick={handleClearOutput}
-                        disabled={!canClearOutput || isExecutingSql || isExecutingPython}
-                        className="rounded-full border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-300 transition hover:bg-slate-800/60 hover:text-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
-                      >
-                        Clear
-                      </button>
-                    </div>
-                  </div>
-                  <div className="flex-1 overflow-auto px-5 py-4 font-mono text-sm text-emerald-200">
-                    {duckDbError && (
-                      <div className="mb-3 rounded-lg border border-rose-500/40 bg-rose-900/30 px-3 py-2 text-rose-200">
-                        {duckDbError}
-                      </div>
-                    )}
-                    {/* {duckDbSetupError && (
-                      <div className="mb-3 rounded-lg border border-rose-500/40 bg-rose-900/20 px-3 py-2 text-rose-200">
-                        {duckDbSetupError}
-                      </div>
-                    )} */}
-                    {sqlResults.length === 0 && !sqlError && !isExecutingSql && !pythonOutput && !pythonError && !isExecutingPython && (
-                      <div className="text-sm text-slate-400">
-                        {selectedQuestionType === "google_sheets" || selectedQuestionType === "statistics"
-                          ? worksheetSolution.trim()
-                            ? "Submit your summary to see the evaluation here."
-                            : "Add your summary above, then submit to view feedback here."
-                          : sqlCode.trim()
-                          ? "Run your solution to inspect the output here."
-                          : "Start coding above to see your output stream here."}
-                      </div>
-                    )}
-                    {pythonOutput && (
-                      <div className="mb-6">
-                        <div className="rounded-lg border border-emerald-500/30 bg-emerald-950/60 px-4 py-3">
-                          <pre className="whitespace-pre-wrap text-emerald-200 text-xs">{pythonOutput}</pre>
-                        </div>
-                      </div>
-                    )}
-                    {pythonError && (
-                      <div className="mb-6">
-                        <div className="rounded-lg border border-rose-500/40 bg-rose-900/40 px-4 py-3">
-                          <pre className="whitespace-pre-wrap text-rose-100 text-xs">{pythonError}</pre>
-                        </div>
-                      </div>
-                    )}
-                    {sqlResults.map((result, index) => {
-                      const isHintResult = Boolean(result?.isHint);
-                      const isEvaluationResult = Boolean(result?.isEvaluation);
-                      const columnsArray = Array.isArray(result?.columns) ? result.columns : [];
-                      const valuesArray = Array.isArray(result?.values) ? result.values : [];
-
-                      if (isEvaluationResult) {
-                        const verdictText =
-                          typeof result?.verdict === "string"
-                            ? result.verdict
-                            : result?.isCorrect
-                            ? "Correct"
-                            : "Needs another pass";
-                        const normalizedVerdict = verdictText || "";
-                        const isCorrect =
-                          typeof result?.isCorrect === "boolean"
-                            ? result.isCorrect
-                            : normalizedVerdict.toLowerCase().includes("correct");
-
-                        // NEW: robust feedback extraction
-                        const rawFeedback =
-                          (typeof result?.feedback === "string" && result.feedback) ||
-                          (typeof result?.evaluation?.feedback === "string" && result.evaluation.feedback) ||
-                          "";
-                        const feedbackText = rawFeedback.trim();
-                        const hasFeedback = feedbackText.length > 0;
-
-                        return (
-                          <div key={index} className="mb-6">
-                            <div
-                              className={`rounded-lg border px-4 py-3 ${
-                                isCorrect
-                                  ? "border-emerald-400/60 bg-emerald-900/40 text-emerald-100"
-                                  : "border-amber-400/60 bg-amber-900/30 text-amber-100"
-                              }`}
-                            >
-                              <p className="text-sm font-semibold">{normalizedVerdict}</p>
-                              {hasFeedback && (
-                                <p className="mt-2 text-xs leading-relaxed text-slate-100">
-                                  {feedbackText}
-                                </p>
-                              )}
-                              {/* <p className="mt-3 text-[11px] uppercase tracking-[0.2em] text-slate-200/70">
-                                {result?.prompt ||
-                                  "Want to polish it further? Ask for a hint or review the reference solution."}
-                              </p> */}
-                            </div>
-                          </div>
-                        );
-                      }
-
-                      if (isHintResult) {
-                        return (
-                          <div key={index} className="mb-6">
-                            <div className="rounded-lg border border-amber-400/60 bg-amber-900/30 px-4 py-3 text-amber-100">
-                              <p className="text-sm font-semibold">
-                                Hint
-                              </p>
-                              {result?.message ? (
-                                <p className="mt-2 text-xs leading-relaxed text-amber-100">
-                                  {result.message}
-                                </p>
-                              ) : null}
-                            </div>
-                          </div>
-                        );
-                      }
-
-                      const columnTypes = (result as any)?.columnTypes ?? {};
-                      if (columnsArray.length > 0 && valuesArray.length > 0) {
-                        return (
-                          <div key={index} className="mb-6">
-                            <div className="rounded-lg border border-emerald-500/30 overflow-x-auto">
-                              <table className="min-w-full border-collapse text-xs">
-                                <thead className="bg-emerald-900/40 text-emerald-100">
-                                  <tr>
-                                    {columnsArray.map((col: string) => (
-                                      <th key={col} className="px-3 py-2 text-left font-semibold">
-                                        {col}
-                                      </th>
-                                    ))}
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {valuesArray.slice(0, 15).map((row: any[], rowIndex: number) => (
-                                    <tr
-                                      key={rowIndex}
-                                      className={rowIndex % 2 === 0 ? "bg-emerald-950/60" : "bg-emerald-900/40"}
-                                    >
-                                      {row.map((cell: any, cellIndex: number) => {
-                                        const columnName = columnsArray[cellIndex];
-                                        const formattedValue = formatCellValue(
-                                          cell,
-                                          columnName,
-                                          columnTypes[columnName],
-                                        );
-                                        return (
-                                          <td key={cellIndex} className="px-3 py-2 text-emerald-200">
-                                            {formattedValue}
-                                          </td>
-                                        );
-                                      })}
-                                    </tr>
-                                  ))}
-                                  {valuesArray.length > 15 && (
-                                    <tr>
-                                      <td
-                                        colSpan={columnsArray.length}
-                                        className="px-3 py-2 text-center text-xs text-emerald-300"
-                                      >
-                                        ... {valuesArray.length - 15} more rows ...
-                                      </td>
-                                    </tr>
-                                  )}
-                                </tbody>
-                              </table>
-                            </div>
-                          </div>
-                        );
-                      }
-
-                      return (
-                        <div key={index} className="mb-6">
-                          <div className="rounded-lg border border-emerald-500/40 bg-emerald-900/30 px-3 py-2 text-sm text-emerald-200">
-                            Query executed successfully (no rows returned).
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            </div>
-          )
-        )}
+        
       </div>
     );
 
@@ -18092,82 +17220,38 @@ export function SubjectLearningInterface({
         | 'reasoning'
         | 'math'
         | 'geometry';
-      const practiceResourceList = selectedSection ? buildResourceList(selectedSection) : [];
-      const practiceResourceIndex =
-        selectedPracticeExercise?.id && selectedSection
-          ? practiceResourceList.findIndex(
-              (resource) =>
-                resource.kind === "exercise" &&
-                resource.resourceId === String(selectedPracticeExercise.id),
-            )
-          : -1;
-          const canAdvanceFromPracticeMode =
-            practiceResourceIndex >= 0 &&
-            (practiceResourceIndex < practiceResourceList.length - 1 ||
-              currentSectionIndex < allSections.length - 1);
           contentDisplay = (
             <div className="rounded-2xl border border-white/60 bg-white/80 backdrop-blur-xl shadow-lg overflow-hidden">
-              <div className="flex items-center justify-between p-4 border-b border-gray-200">
-                <h2 className="text-xl font-semibold text-gray-900">
-                  Practice Mode: {selectedPracticeExercise?.title || 'Exercise'}
-                </h2>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={handleAdvanceFromPractice}
-                    disabled={!canAdvanceFromPracticeMode}
-                    className="px-3 py-1.5 text-sm text-indigo-600 hover:bg-indigo-50 rounded-lg border border-indigo-100 transition disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Next
-                  </button>
-                  <button
-                    onClick={handleExitPractice}
-                    className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition"
-                  >
-                    Exit Practice
-                  </button>
-                </div>
+              <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
+                <span className="text-sm font-semibold text-gray-700">Practice</span>
+                <button
+                  onClick={handleExitPractice}
+                  className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition"
+                >
+                  Exit
+                </button>
               </div>
               <PracticeArea
                 questions={practiceQuestions}
                 datasets={practiceDatasets}
                 exerciseType={typedExerciseType}
-            exerciseTitle={selectedPracticeExercise?.title}
-            exerciseDifficulty={(selectedPracticeExercise as any)?.difficulty ?? null}
-            answersMap={
-              (selectedPracticeExercise as any)?.context?.answers_sql_map ??
-              (selectedPracticeExercise as any)?.answers_sql_map ??
-              null
-            }
-            onSubmit={handlePracticeSubmit}
-            onRequestHint={allowWorkspaceHint ? handlePracticeHintRequest : undefined}
-            allowHint={allowWorkspaceHint}
-            allowSubmission={allowWorkspaceSubmission}
-            practiceDatasetLoading={isPracticeDatasetLoading}
-          />
-          <div className="border-t border-dashed border-slate-200 px-4 py-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <button
-              type="button"
-              onClick={handleAdvanceFromPractice}
-              disabled={!canAdvanceFromPracticeMode}
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-indigo-300 hover:text-indigo-900 disabled:border-slate-200 disabled:text-slate-400"
-            >
-              Next
-              <ChevronRight className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
-              onClick={handleJumpToNextSection}
-              disabled={!canJumpNextSection}
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-indigo-300 hover:text-indigo-900 disabled:border-slate-200 disabled:text-slate-400"
-            >
-              Next Section Lecture
-              <ChevronRight className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
-      );
-    }
+                exerciseTitle={selectedPracticeExercise?.title}
+                exerciseDifficulty={(selectedPracticeExercise as any)?.difficulty ?? null}
+                answersMap={
+                  (selectedPracticeExercise as any)?.context?.answers_sql_map ??
+                  (selectedPracticeExercise as any)?.answers_sql_map ??
+                  null
+                }
+                focusMode
+                onSubmit={handlePracticeSubmit}
+                onRequestHint={allowWorkspaceHint ? handlePracticeHintRequest : undefined}
+                allowHint={allowWorkspaceHint}
+                allowSubmission={allowWorkspaceSubmission}
+                practiceDatasetLoading={isPracticeDatasetLoading}
+              />
+            </div>
+          );
+        }
   } else if (selectedResource?.kind === "lecture") {
     contentDisplay = renderLectureDisplay();
   } else if (selectedResource?.kind === "exercise") {
@@ -18216,17 +17300,22 @@ export function SubjectLearningInterface({
       ? `${watchedLectureMinutes}/${aggregatedLectureMinutes} mins watched`
       : null;
 
+  const isExerciseFocusView = Boolean(selectedQuestionForPopup);
+  const hideChrome = isPracticeMode || isExerciseFocusView || isAdaptiveQuizMode;
+  const showOutline = !isContentExpanded && !hideChrome;
+
   return (
 
     <div
       className={`relative grid grid-cols-1 gap-6 h-full min-h-0 overflow-hidden ${
-        !isContentExpanded ? "xl:grid-cols-[1fr_380px]" : ""
+        showOutline ? "xl:grid-cols-[1fr_380px]" : ""
       }`}
     >
 
       <div ref={mainContentRef} className="flex flex-col gap-6 min-w-0 overflow-y-auto">
 
-        <div className="order-1 lg:order-1 rounded-2xl border border-white/60 bg-gradient-to-br from-white/80 to-white/60 p-6 backdrop-blur-xl shadow-lg">
+        {!hideChrome && (
+          <div className="order-1 lg:order-1 rounded-2xl border border-white/60 bg-gradient-to-br from-white/80 to-white/60 p-6 backdrop-blur-xl shadow-lg">
 
           <div className="mb-4 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
 
@@ -18299,7 +17388,8 @@ export function SubjectLearningInterface({
 
           </div>
 
-        </div>
+          </div>
+        )}
 
         {/* {selectedSection && (
 
@@ -18351,23 +17441,25 @@ export function SubjectLearningInterface({
           )}
         </div>
 
-        <div className="order-3">
-          <ProfessionalCourseTabs
-            courseHrefBase={`/curriculum/${courseSlugForUrl || courseId}/${subjectSlugForUrl || subjectId}`}
-            sectionId={selectedSectionId}
-            sectionTitle={selectedSection?.title}
-            section={selectedSection}
-            courseId={courseId}
-            subjectId={subjectId}
-            trackTitle={trackTitle}
-            subjectTitle={subjectTitle || undefined}
-            canAccessApi={isAuthenticated}
-          />
-        </div>
+        {!hideChrome && (
+          <div className="order-3">
+            <ProfessionalCourseTabs
+              courseHrefBase={`/curriculum/${courseSlugForUrl || courseId}/${subjectSlugForUrl || subjectId}`}
+              sectionId={selectedSectionId}
+              sectionTitle={selectedSection?.title}
+              section={selectedSection}
+              courseId={courseId}
+              subjectId={subjectId}
+              trackTitle={trackTitle}
+              subjectTitle={subjectTitle || undefined}
+              canAccessApi={isAuthenticated}
+            />
+          </div>
+        )}
 
       </div>
 
-      {!isContentExpanded && (
+      {showOutline && (
         <aside
           className="fixed inset-x-0 bottom-0 top-16 z-40 flex flex-col gap-4 overflow-y-auto bg-white/95 px-4 py-6 backdrop-blur-md shadow-xl sm:px-6 xl:static xl:z-auto xl:gap-6 xl:bg-transparent xl:px-0 xl:py-0 xl:shadow-none xl:[scrollbar-width:thin] xl:[&::-webkit-scrollbar]:w-2 xl:[&::-webkit-scrollbar-thumb]:rounded-full xl:[&::-webkit-scrollbar-thumb]:bg-slate-300/60 xl:hover:[&::-webkit-scrollbar-thumb]:bg-slate-400/70 xl:[&::-webkit-scrollbar-track]:bg-transparent xl:max-h-[calc(100dvh-4rem)] xl:overflow-y-auto xl:pr-2"
         >
@@ -18786,21 +17878,9 @@ export function SubjectLearningInterface({
                       >
 
                         <div
-                          className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl ${
-                            sectionCompleted
-                              ? "bg-emerald-100 text-emerald-600"
-                              : isCurrentSection
-                              ? "bg-indigo-100 text-indigo-600"
-                              : "bg-slate-100 text-slate-400 group-hover:bg-indigo-100 group-hover:text-indigo-500"
-                          }`}
+                          className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl`}
                         >
-                          {sectionCompleted ? (
-                            <CheckCircle className="h-4 w-4" />
-                          ) : isCurrentSection ? (
-                            <Play className="h-4 w-4" />
-                          ) : (
-                            <Circle className="h-4 w-4" />
-                          )}
+                          
                         </div>
 
                         <div className="flex-1 min-w-0">
@@ -18813,12 +17893,7 @@ export function SubjectLearningInterface({
                             }`}
                           >
                             {section.title}
-                            {/* {sectionCompleted ? (
-                              <span className="ml-2 inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
-                                <CheckCircle className="h-3 w-3" />
-                                Completed
-                              </span>
-                            ) : null} */}
+      
                           </div>
 
                           {showRequirements && (

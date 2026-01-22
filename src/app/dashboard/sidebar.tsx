@@ -26,6 +26,7 @@ import { useUserSummary, type UserSummary } from "@/hooks/use-user-summary"
 
 interface SidebarProps {
   active?: string
+  defaultOpen?: boolean
   user?: {
     name: string
     email: string
@@ -40,8 +41,8 @@ interface SidebarProps {
   }
 }
 
-export function Sidebar({ active = "/dashboard", user }: SidebarProps) {
-  const [open, setOpen] = useState(true)
+export function Sidebar({ active = "/dashboard", defaultOpen = true, user }: SidebarProps) {
+  const [open, setOpen] = useState(defaultOpen)
   
   const secondaryItems = [
     { 
@@ -243,7 +244,12 @@ export function Sidebar({ active = "/dashboard", user }: SidebarProps) {
                       ? 'bg-gray-200/80 text-gray-400'
                       : 'bg-gray-100/80 text-gray-600 group-hover:bg-white group-hover:shadow-md',
                 ].join(" ")
-                const textClasses = `${open ? 'opacity-100' : 'opacity-0 pointer-events-none'} transition-all duration-300`
+                const textClasses = [
+                  "transition-all duration-300",
+                  open
+                    ? "flex-1 min-w-0 opacity-100"
+                    : "flex-none w-0 overflow-hidden opacity-0 pointer-events-none",
+                ].join(" ")
 
                 const content = (
                   <>
@@ -254,7 +260,7 @@ export function Sidebar({ active = "/dashboard", user }: SidebarProps) {
                       )}
                     </div>
                     
-                    <div className={`flex-1 min-w-0 ${textClasses}`}>
+                    <div className={textClasses}>
                       <div className="flex items-center justify-between">
                         <span className="truncate">{item.label}</span>
                         <div className="flex items-center gap-1">
@@ -287,11 +293,16 @@ export function Sidebar({ active = "/dashboard", user }: SidebarProps) {
                 return (
                   <div key={item.href} className="relative">
                     {isComingSoon ? (
-                      <div className={wrapperClasses} role="button" aria-disabled="true">
+                      <div
+                        className={wrapperClasses}
+                        role="button"
+                        aria-disabled="true"
+                        title={open ? undefined : item.label}
+                      >
                         {content}
                       </div>
                     ) : (
-                      <a href={item.href} className={wrapperClasses}>
+                      <a href={item.href} className={wrapperClasses} title={open ? undefined : item.label}>
                         {content}
                       </a>
                     )}
@@ -326,7 +337,12 @@ export function Sidebar({ active = "/dashboard", user }: SidebarProps) {
                       ? 'bg-gray-200/80 text-gray-400'
                       : 'bg-gray-100/80 text-gray-600 group-hover:bg-white group-hover:shadow-md',
                 ].join(" ")
-                const textClasses = `${open ? 'opacity-100' : 'opacity-0 pointer-events-none'} transition-all duration-300`
+                const textClasses = [
+                  "transition-all duration-300",
+                  open
+                    ? "flex-1 min-w-0 opacity-100"
+                    : "flex-none w-0 overflow-hidden opacity-0 pointer-events-none",
+                ].join(" ")
 
                 const content = (
                   <>
@@ -334,7 +350,7 @@ export function Sidebar({ active = "/dashboard", user }: SidebarProps) {
                       {item.icon}
                     </div>
                     
-                    <div className={`flex-1 min-w-0 ${textClasses}`}>
+                    <div className={textClasses}>
                       <div className="flex items-center justify-between">
                         <span className="truncate">{item.label}</span>
                         <div className="flex items-center gap-1">
@@ -365,11 +381,16 @@ export function Sidebar({ active = "/dashboard", user }: SidebarProps) {
                 return (
                   <div key={item.href} className="relative">
                     {isComingSoon ? (
-                      <div className={wrapperClasses} role="button" aria-disabled="true">
+                      <div
+                        className={wrapperClasses}
+                        role="button"
+                        aria-disabled="true"
+                        title={open ? undefined : item.label}
+                      >
                         {content}
                       </div>
                     ) : (
-                      <a href={item.href} className={wrapperClasses}>
+                      <a href={item.href} className={wrapperClasses} title={open ? undefined : item.label}>
                         {content}
                       </a>
                     )}
@@ -410,6 +431,7 @@ export function Sidebar({ active = "/dashboard", user }: SidebarProps) {
                         ? 'bg-gradient-to-r from-indigo-500/15 to-purple-500/15 text-indigo-700' 
                         : 'text-gray-700 hover:bg-white/60'
                     }`}
+                    title={open ? undefined : item.label}
                   >
                     <div className={`flex h-8 w-8 items-center justify-center rounded-lg transition-all duration-200 ${
                       isActive 
@@ -418,7 +440,14 @@ export function Sidebar({ active = "/dashboard", user }: SidebarProps) {
                     }`}>
                       {item.icon}
                     </div>
-                    <span className={`${open ? 'opacity-100' : 'opacity-0 pointer-events-none'} transition-all duration-300`}>
+                    <span
+                      className={[
+                        "inline-block transition-all duration-300",
+                        open
+                          ? "opacity-100"
+                          : "w-0 overflow-hidden opacity-0 pointer-events-none",
+                      ].join(" ")}
+                    >
                       {item.label}
                     </span>
                   </a>
@@ -430,11 +459,19 @@ export function Sidebar({ active = "/dashboard", user }: SidebarProps) {
                 className={`group flex w-full items-center rounded-xl text-sm font-medium text-gray-700 transition-all duration-200 hover:bg-red-50/60 hover:text-red-700 ${
                   open ? 'gap-3 px-3 py-2.5' : 'justify-center px-2 py-2.5'
                 }`}
+                title={open ? undefined : "Sign Out"}
               >
                 <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-100/80 text-gray-600 transition-all duration-200 group-hover:bg-red-100 group-hover:text-red-600">
                   <LogOut className="h-4 w-4" />
                 </div>
-                <span className={`${open ? 'opacity-100' : 'opacity-0 pointer-events-none'} transition-all duration-300`}>
+                <span
+                  className={[
+                    "inline-block transition-all duration-300",
+                    open
+                      ? "opacity-100"
+                      : "w-0 overflow-hidden opacity-0 pointer-events-none",
+                  ].join(" ")}
+                >
                   Sign Out
                 </span>
               </button>
