@@ -39,6 +39,7 @@ import {
   Users,
   GraduationCap,
   UserCheck,
+  User,
   UserX,
   Calendar,
   ChevronLeft,
@@ -57,23 +58,57 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { toast } from 'sonner'
-import { useForm, Controller } from 'react-hook-form'
+import { useForm, Controller, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 
 // Form validation schemas
-const createUserSchema = z.object({
-  email: z.string().email('Invalid email address'),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
-  full_name: z.string().min(2, 'Full name must be at least 2 characters'),
-  mobile: z.string().optional(),
-  role: z.enum(['student', 'teacher'], { required_error: 'Please select a role' }),
-})
+const createUserSchema = z
+  .object({
+    email: z.string().email('Invalid email address'),
+    password: z.string().min(6, 'Password must be at least 6 characters'),
+    full_name: z.string().min(2, 'Full name must be at least 2 characters'),
+    mobile: z.string().optional(),
+    role: z.enum(['student', 'teacher', 'parent'], { required_error: 'Please select a role' }),
+    parent_id: z.string().optional(),
+    parent_full_name: z.string().optional(),
+    parent_email: z.string().email('Invalid parent email').optional(),
+    parent_mobile: z.string().optional(),
+    parent_password: z.string().min(6, 'Password must be at least 6 characters').optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.role === 'student') {
+      const hasExistingParent = !!data.parent_id?.trim()
+      if (!hasExistingParent) {
+        if (!data.parent_full_name) {
+          ctx.addIssue({
+            path: ['parent_full_name'],
+            code: z.ZodIssueCode.custom,
+            message: 'Parent full name is required for students',
+          })
+        }
+        if (!data.parent_email) {
+          ctx.addIssue({
+            path: ['parent_email'],
+            code: z.ZodIssueCode.custom,
+            message: 'Parent email is required for students',
+          })
+        }
+        if (!data.parent_password) {
+          ctx.addIssue({
+            path: ['parent_password'],
+            code: z.ZodIssueCode.custom,
+            message: 'Parent password is required for students',
+          })
+        }
+      }
+    }
+  })
 
 const updateUserSchema = z.object({
   full_name: z.string().min(2, 'Full name must be at least 2 characters').optional(),
   mobile: z.string().optional(),
-  role: z.enum(['student', 'teacher', 'admin']).optional(),
+  role: z.enum(['student', 'teacher', 'admin', 'parent']).optional(),
   education: z.string().optional(),
   graduation_year: z.number().min(1950).max(new Date().getFullYear() + 10).optional(),
   domain: z.string().optional(),
@@ -81,6 +116,7 @@ const updateUserSchema = z.object({
   location: z.string().optional(),
   current_institute: z.string().optional(),
   onboarding_completed: z.boolean().optional(),
+  parent_id: z.string().optional(),
 })
 
 type CreateUserData = z.infer<typeof createUserSchema>
@@ -98,6 +134,7 @@ interface UserProfile {
   location?: string
   current_institute?: string
   onboarding_completed?: boolean
+  parent_id?: string | null
 }
 
 interface User {
@@ -114,6 +151,7 @@ interface UserStats {
   students: number
   teachers: number
   admins: number
+  parents: number
   activeUsers: number
   newUsersThisMonth: number
 }
@@ -139,6 +177,14 @@ interface BulkImportResult {
   }
 }
 
+interface ParentOption {
+  id: string
+  label: string
+}
+
+const CREATE_NEW_PARENT_VALUE = '__create_new_parent__'
+const CLEAR_PARENT_VALUE = '__no_parent__'
+
 export function UserManagementClient() {
   const [users, setUsers] = useState<User[]>([])
   const [stats, setStats] = useState<UserStats>({
@@ -146,12 +192,13 @@ export function UserManagementClient() {
     students: 0,
     teachers: 0,
     admins: 0,
+    parents: 0,
     activeUsers: 0,
     newUsersThisMonth: 0
   })
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
-  const [roleFilter, setRoleFilter] = useState<'all' | 'student' | 'teacher' | 'admin'>('all')
+  const [roleFilter, setRoleFilter] = useState<'all' | 'student' | 'teacher' | 'admin' | 'parent'>('all')
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
@@ -162,6 +209,10 @@ export function UserManagementClient() {
   const [bulkImportError, setBulkImportError] = useState<string | null>(null)
   const [isBulkImporting, setIsBulkImporting] = useState(false)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const [parentOptions, setParentOptions] = useState<ParentOption[]>([])
+  const [parentLoading, setParentLoading] = useState(false)
+  const [parentFetchError, setParentFetchError] = useState<string | null>(null)
+  const [parentLoadedOnce, setParentLoadedOnce] = useState(false)
 
   const {
     register: registerCreate,
@@ -173,6 +224,17 @@ export function UserManagementClient() {
     resolver: zodResolver(createUserSchema)
   })
 
+  const createRole = useWatch({
+    control: controlCreate,
+    name: 'role',
+    defaultValue: 'student',
+  })
+  const selectedParentId = useWatch({
+    control: controlCreate,
+    name: 'parent_id',
+  })
+  const hasExistingParent = Boolean(selectedParentId?.trim())
+
   const {
     register: registerUpdate,
     handleSubmit: handleSubmitUpdate,
@@ -183,6 +245,63 @@ export function UserManagementClient() {
   } = useForm<UpdateUserData>({
     resolver: zodResolver(updateUserSchema)
   })
+
+  const updateRole = useWatch({
+    control: controlUpdate,
+    name: 'role',
+    defaultValue: 'student',
+  })
+
+  const updateParentId = useWatch({
+    control: controlUpdate,
+    name: 'parent_id',
+  })
+
+  useEffect(() => {
+    if (parentLoadedOnce) return
+    if (createRole !== 'student' && updateRole !== 'student') return
+
+    const controller = new AbortController()
+    setParentLoading(true)
+    setParentFetchError(null)
+
+    const loadParents = async () => {
+      try {
+        const params = new URLSearchParams({
+          role: 'parent',
+          page: '1',
+          limit: '100',
+        })
+        const response = await fetch(`/api/admin/users?${params}`, {
+          signal: controller.signal,
+        })
+
+        if (!response.ok) {
+          const errorText = await response.text().catch(() => 'Failed to load parent list')
+          throw new Error(errorText || 'Failed to load parent list')
+        }
+
+        const data = await response.json()
+        const parents: ParentOption[] = (data.users ?? []).map((user: User) => ({
+          id: user.id,
+          label: user.profile?.full_name
+            ? `${user.profile.full_name} (${user.email})`
+            : user.email,
+        }))
+        setParentOptions(parents)
+        setParentLoadedOnce(true)
+      } catch (error: any) {
+        if (error.name === 'AbortError') return
+        setParentFetchError(error?.message || 'Unable to load parents')
+      } finally {
+        setParentLoading(false)
+      }
+    }
+
+    loadParents()
+
+    return () => controller.abort()
+  }, [createRole, parentLoadedOnce, updateRole])
 
   // Fetch users
   const fetchUsers = async (page = 1, search = '', role = 'all') => {
@@ -240,7 +359,7 @@ export function UserManagementClient() {
   }
 
   // Filter handler
-  const handleRoleFilter = (role: 'all' | 'student' | 'teacher' | 'admin') => {
+  const handleRoleFilter = (role: 'all' | 'student' | 'teacher' | 'admin' | 'parent') => {
     setRoleFilter(role)
     setCurrentPage(1)
   }
@@ -253,9 +372,11 @@ export function UserManagementClient() {
 
   const handleDownloadTemplate = () => {
     const csvTemplate = [
-      'name,number,email,password,assigned_course,user_type',
+      'name,number,email,password,assigned_course,user_type,parent_name,parent_email,parent_mobile,parent_password',
       'John Doe,1234567890,john@example.com,Password123,course-123,student',
       'Jane Doe,5551234,jane@example.com,Password123,"course-456,course-789",teacher',
+      'Student One,3456789012,student.one@example.com,Password123,course-111,student,Parent One,parent.one@example.com,+919876543210,ParentPass1',
+      'Parent Partner,,parent@example.com,Password123,,parent',
       'Alice Smith,,alice@example.com,Password123,,admin'
     ].join('\n')
 
@@ -322,10 +443,31 @@ export function UserManagementClient() {
   // Create user handler
   const handleCreateUser = async (data: CreateUserData) => {
     try {
+      const isStudentRole = data.role === 'student'
+      const trimmedParentId =
+        isStudentRole && data.parent_id?.trim() ? data.parent_id.trim() : undefined
+      const parentDetails =
+        isStudentRole && !trimmedParentId
+          ? {
+              full_name: data.parent_full_name!,
+              email: data.parent_email!,
+              mobile: data.parent_mobile || undefined,
+              password: data.parent_password!,
+            }
+          : undefined
+
       const response = await fetch('/api/admin/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
+        body: JSON.stringify({
+          email: data.email,
+          password: data.password,
+          full_name: data.full_name,
+          mobile: data.mobile,
+          role: data.role,
+          parent_id: trimmedParentId,
+          parent_details: parentDetails,
+        })
       })
 
       if (!response.ok) {
@@ -348,7 +490,8 @@ export function UserManagementClient() {
     setSelectedUser(user)
     setUpdateValue('full_name', user.profile.full_name || '')
     setUpdateValue('mobile', user.profile.mobile || '')
-    setUpdateValue('role', user.profile.role as 'student' | 'teacher' | 'admin')
+    setUpdateValue('role', user.profile.role as 'student' | 'teacher' | 'admin' | 'parent')
+    setUpdateValue('parent_id', user.profile.parent_id || undefined)
     setUpdateValue('education', user.profile.education || '')
     setUpdateValue('graduation_year', user.profile.graduation_year || undefined)
     setUpdateValue('domain', user.profile.domain || '')
@@ -364,10 +507,18 @@ export function UserManagementClient() {
     if (!selectedUser) return
 
     try {
+      const normalizedParentId =
+        data.parent_id === CLEAR_PARENT_VALUE
+          ? ''
+          : data.parent_id?.trim()
+      const payload: UpdateUserData = {
+        ...data,
+        parent_id: normalizedParentId ?? undefined,
+      }
       const response = await fetch(`/api/admin/users/${selectedUser.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
+        body: JSON.stringify(payload)
       })
 
       if (!response.ok) {
@@ -415,9 +566,13 @@ export function UserManagementClient() {
       case 'admin': return 'destructive'
       case 'teacher': return 'default'
       case 'student': return 'secondary'
+      case 'parent': return 'outline'
       default: return 'outline'
     }
   }
+
+  const getRolePercentage = (count: number) =>
+    stats.totalUsers ? Math.round((count / stats.totalUsers) * 100) : 0
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString()
@@ -448,7 +603,7 @@ export function UserManagementClient() {
                   User Management
                 </h1>
                 <p className="text-gray-600 mt-2">
-                  Manage students, teachers, and administrators
+                  Manage students, teachers, parents, and administrators
                 </p>
               </div>
               <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
@@ -458,11 +613,11 @@ export function UserManagementClient() {
                     Add User
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="max-w-2xl">
+                <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
                   <DialogHeader>
                     <DialogTitle>Create New User</DialogTitle>
                     <DialogDescription>
-                      Add a new student or teacher to the platform
+                      Add a new student, teacher, or parent to the platform
                     </DialogDescription>
                   </DialogHeader>
                   <form onSubmit={handleSubmitCreate(handleCreateUser)} className="space-y-6">
@@ -518,6 +673,7 @@ export function UserManagementClient() {
                               <SelectContent>
                                 <SelectItem value="student">Student</SelectItem>
                                 <SelectItem value="teacher">Teacher</SelectItem>
+                                <SelectItem value="parent">Parent</SelectItem>
                               </SelectContent>
                             </Select>
                           )}
@@ -526,6 +682,56 @@ export function UserManagementClient() {
                           <p className="text-sm text-red-600">{createErrors.role.message}</p>
                         )}
                       </div>
+
+                      {createRole === 'student' && (
+                        <div className="space-y-2">
+                          <Label>Assign existing parent</Label>
+                          <Controller
+                            name="parent_id"
+                            control={controlCreate}
+                            render={({ field }) => (
+                              <Select
+                                value={field.value ?? CREATE_NEW_PARENT_VALUE}
+                                onValueChange={(value) =>
+                                  field.onChange(
+                                    value === CREATE_NEW_PARENT_VALUE
+                                      ? undefined
+                                      : value,
+                                  )
+                                }
+                              >
+                                <SelectTrigger className="w-full">
+                                  <SelectValue placeholder="Select an existing parent (optional)" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value={CREATE_NEW_PARENT_VALUE}>
+                                    Create a new parent (fill details below)
+                                  </SelectItem>
+                                  {parentOptions.map((parent) => (
+                                    <SelectItem key={parent.id} value={parent.id}>
+                                      {parent.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            )}
+                          />
+                          {parentLoading && (
+                            <p className="text-xs text-slate-500">Loading parent accounts…</p>
+                          )}
+                          {!parentLoading && parentOptions.length === 0 && (
+                            <p className="text-xs text-slate-400">
+                              No parent accounts found yet.
+                            </p>
+                          )}
+                          {parentFetchError && (
+                            <p className="text-xs text-red-600">{parentFetchError}</p>
+                          )}
+                          <p className="text-xs text-slate-500">
+                            Selecting a parent reuses that account and skips creating a new parent below.
+                          </p>
+                        </div>
+                      )}
 
                       <div className="space-y-2">
                         <Label htmlFor="password">Password</Label>
@@ -539,6 +745,75 @@ export function UserManagementClient() {
                           <p className="text-sm text-red-600">{createErrors.password.message}</p>
                         )}
                       </div>
+
+                      {createRole === 'student' && (
+                        <div className="rounded-2xl border border-dashed border-amber-200 bg-amber-50/70 p-4">
+                          <p className="text-sm font-semibold text-amber-700">Parent details</p>
+                          <p className="text-xs text-amber-500">Required when creating a student</p>
+                          <div
+                            className={`mt-3 grid gap-4 md:grid-cols-2 ${
+                              hasExistingParent ? 'opacity-50' : ''
+                            }`}
+                          >
+                            <div className="space-y-2">
+                              <Label htmlFor="parent_full_name">Parent full name</Label>
+                              <Input
+                                id="parent_full_name"
+                                disabled={hasExistingParent}
+                                {...registerCreate('parent_full_name')}
+                                placeholder="Parent Name"
+                              />
+                              {createErrors.parent_full_name && (
+                                <p className="text-sm text-red-600">{createErrors.parent_full_name.message}</p>
+                              )}
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="parent_email">Parent email</Label>
+                              <Input
+                                id="parent_email"
+                                type="email"
+                                disabled={hasExistingParent}
+                                {...registerCreate('parent_email')}
+                                placeholder="parent@example.com"
+                              />
+                              {createErrors.parent_email && (
+                                <p className="text-sm text-red-600">{createErrors.parent_email.message}</p>
+                              )}
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="parent_mobile">Parent mobile</Label>
+                              <Input
+                                id="parent_mobile"
+                                type="tel"
+                                disabled={hasExistingParent}
+                                {...registerCreate('parent_mobile')}
+                                placeholder="+1234567890"
+                              />
+                              {createErrors.parent_mobile && (
+                                <p className="text-sm text-red-600">{createErrors.parent_mobile.message}</p>
+                              )}
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="parent_password">Parent password</Label>
+                              <Input
+                                id="parent_password"
+                                type="password"
+                                disabled={hasExistingParent}
+                                {...registerCreate('parent_password')}
+                                placeholder="Minimum 6 characters"
+                              />
+                              {createErrors.parent_password && (
+                                <p className="text-sm text-red-600">{createErrors.parent_password.message}</p>
+                              )}
+                            </div>
+                          </div>
+                          {hasExistingParent && (
+                            <p className="text-xs text-slate-500">
+                              Parent details are ignored while assigning an existing parent. Clear the select above to edit them.
+                            </p>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     <div className="flex justify-end gap-3 pt-4">
@@ -562,7 +837,7 @@ export function UserManagementClient() {
         </div>
 
         {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
           <Card className="border-white/20 bg-white/80 backdrop-blur-xl">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Total Users</CardTitle>
@@ -584,7 +859,7 @@ export function UserManagementClient() {
             <CardContent>
               <div className="text-2xl font-bold">{stats.students}</div>
               <p className="text-xs text-muted-foreground">
-                {Math.round((stats.students / stats.totalUsers) * 100)}% of total
+                {getRolePercentage(stats.students)}% of total
               </p>
             </CardContent>
           </Card>
@@ -597,7 +872,20 @@ export function UserManagementClient() {
             <CardContent>
               <div className="text-2xl font-bold">{stats.teachers}</div>
               <p className="text-xs text-muted-foreground">
-                {Math.round((stats.teachers / stats.totalUsers) * 100)}% of total
+                {getRolePercentage(stats.teachers)}% of total
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card className="border-white/20 bg-white/80 backdrop-blur-xl">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Parents</CardTitle>
+              <User className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{stats.parents}</div>
+              <p className="text-xs text-muted-foreground">
+                {getRolePercentage(stats.parents)}% of total
               </p>
             </CardContent>
           </Card>
@@ -646,7 +934,7 @@ export function UserManagementClient() {
                     </div>
                   </div>
                   <div className="mt-4 rounded-lg bg-white/70 p-4 font-mono text-sm text-gray-700">
-                    name, number, email, password, assigned_course, user_type
+                    name, number, email, password, assigned_course, user_type, parent_name, parent_email, parent_mobile, parent_password
                   </div>
                   <ul className="mt-4 list-disc space-y-2 pl-5 text-sm text-gray-600">
                     <li>Emails must be unique and valid.</li>
@@ -655,7 +943,7 @@ export function UserManagementClient() {
                       Use comma separated course IDs in <code>assigned_course</code>.
                     </li>
                     <li>
-                      <code>user_type</code> can be <strong>student</strong>, <strong>teacher</strong>, or <strong>admin</strong>.
+                      <code>user_type</code> can be <strong>student</strong>, <strong>teacher</strong>, <strong>parent</strong>, or <strong>admin</strong>. Add <code>parent_name</code>, <code>parent_email</code>, <code>parent_mobile</code>, and <code>parent_password</code> to create & link a parent.
                     </li>
                   </ul>
                 </div>
@@ -663,47 +951,133 @@ export function UserManagementClient() {
                   <p className="text-sm font-semibold text-gray-700">Sample Rows</p>
                   <div className="mt-3 overflow-x-auto">
                     <Table>
+
                       <TableHeader>
+
                         <TableRow>
+
                           <TableHead>Name</TableHead>
+
                           <TableHead>Email</TableHead>
+
                           <TableHead>Courses</TableHead>
+
                           <TableHead>Type</TableHead>
+
+                          <TableHead>Parent email</TableHead>
+
+                          <TableHead>Parent phone</TableHead>
+
                         </TableRow>
+
                       </TableHeader>
+
                       <TableBody>
+
                         {[
+
                           {
+
                             name: 'John Doe',
+
                             email: 'john.doe@example.com',
+
                             course: 'course-123',
-                            type: 'student'
+
+                            type: 'student',
+
+                            parentEmail: 'parent.john@example.com',
+
+                            parentPhone: '+91 9988776655',
+
                           },
+
                           {
+
                             name: 'Jane Smith',
+
                             email: 'jane.smith@example.com',
+
                             course: 'course-456,course-789',
-                            type: 'teacher'
+
+                            type: 'teacher',
+
+                            parentEmail: '',
+
+                            parentPhone: '',
+
                           },
+
                           {
-                            name: 'Bob Johnson',
-                            email: 'bob.johnson@example.com',
+
+                            name: 'Parent Partner',
+
+                            email: 'parent.partner@example.com',
+
                             course: '',
-                            type: 'admin'
-                          }
+
+                            type: 'parent',
+
+                            parentEmail: '',
+
+                            parentPhone: '',
+
+                          },
+
+                          {
+
+                            name: 'Bob Johnson',
+
+                            email: 'bob.johnson@example.com',
+
+                            course: '',
+
+                            type: 'admin',
+
+                            parentEmail: '',
+
+                            parentPhone: '',
+
+                          },
+
                         ].map((row) => (
+
                           <TableRow key={row.email}>
+
                             <TableCell>{row.name}</TableCell>
+
                             <TableCell className="font-mono text-xs text-gray-600">
+
                               {row.email}
+
                             </TableCell>
+
                             <TableCell className="text-xs text-gray-600">
-                              {row.course || '—'}
+
+                              {row.course || '\u2014'}
+
                             </TableCell>
+
                             <TableCell className="capitalize">{row.type}</TableCell>
+
+                            <TableCell className="font-mono text-xs text-gray-600">
+
+                             {row.parentEmail || '\u2014'}
+
+                            </TableCell>
+
+                            <TableCell className="font-mono text-xs text-gray-600">
+
+                             {row.parentPhone || '\u2014'}
+
+                            </TableCell>
+
                           </TableRow>
+
                         ))}
+
                       </TableBody>
+
                     </Table>
                   </div>
                 </div>
@@ -901,6 +1275,7 @@ export function UserManagementClient() {
                     <SelectItem value="student">Students</SelectItem>
                     <SelectItem value="teacher">Teachers</SelectItem>
                     <SelectItem value="admin">Admins</SelectItem>
+                    <SelectItem value="parent">Parents</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -1062,6 +1437,7 @@ export function UserManagementClient() {
                           <SelectContent>
                             <SelectItem value="student">Student</SelectItem>
                             <SelectItem value="teacher">Teacher</SelectItem>
+                            <SelectItem value="parent">Parent</SelectItem>
                             <SelectItem value="admin">Admin</SelectItem>
                           </SelectContent>
                         </Select>
@@ -1072,6 +1448,55 @@ export function UserManagementClient() {
                     )}
                   </div>
                 </div>
+
+                {updateRole === 'student' && (
+                  <div className="space-y-2">
+                    <Label htmlFor="edit_parent_id">Parent account</Label>
+                    <Controller
+                      name="parent_id"
+                      control={controlUpdate}
+                      render={({ field }) => (
+                        <Select
+                          value={field.value ?? CLEAR_PARENT_VALUE}
+                          onValueChange={(value) =>
+                            field.onChange(
+                              value,
+                            )
+                          }
+                          disabled={parentLoading}
+                        >
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="Select parent (optional)" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={CLEAR_PARENT_VALUE}>
+                              No parent assigned
+                            </SelectItem>
+                            {parentOptions.map((parent) => (
+                              <SelectItem key={parent.id} value={parent.id}>
+                                {parent.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
+                    {parentLoading && (
+                      <p className="text-xs text-slate-500">Loading parent accounts…</p>
+                    )}
+                    {parentFetchError && (
+                      <p className="text-xs text-red-600">{parentFetchError}</p>
+                    )}
+                    <p className="text-xs text-slate-500">
+                      Choose a parent to link this student to their account.
+                    </p>
+                    {updateParentId === CLEAR_PARENT_VALUE && (
+                      <p className="text-xs text-amber-500">
+                        This student will be unlinked from any parent when saved.
+                      </p>
+                    )}
+                  </div>
+                )}
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
