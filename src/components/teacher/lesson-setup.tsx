@@ -1,9 +1,8 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useState } from "react"
 import { CheckCircle2, ClipboardList, Sparkles } from "lucide-react"
 import { Label } from "@/components/ui/label"
-import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import {
   Select,
@@ -12,57 +11,148 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { toast } from "sonner"
 
-const SUBJECTS = ["Math", "Science", "English", "History", "Computer Science"]
-const GRADES = ["Year 6", "Year 7", "Year 8", "Year 9", "Year 10"]
-const DEFAULT_OBJECTIVES = [
-  "Identify equivalent fractions",
-  "Use visual models to explain fraction relationships",
-  "Simplify fractions with common factors",
-  "Compare fractions using benchmarks",
-]
+type ClassRow = {
+  id: string
+  name: string
+}
+
+type SubjectRow = {
+  id: string
+  title: string
+  course_id: string
+}
+
+type ModuleRow = {
+  id: string
+  title: string
+  subject_id: string
+}
+
+type SectionRow = {
+  id: string
+  title: string
+  module_id: string
+}
+
+export type LessonSetupSelection = {
+  classId: string
+  subjectId: string
+  moduleId: string
+  sectionId: string
+}
 
 type LessonSetupWizardProps = {
-  onContinue?: () => void
+  onContinue?: (selection: LessonSetupSelection) => void
 }
 
 export function LessonSetupWizard({ onContinue }: LessonSetupWizardProps) {
-  const [subject, setSubject] = useState<string>("")
-  const [grade, setGrade] = useState<string>("")
-  const [lessonTitle, setLessonTitle] = useState<string>("Fractions - Equivalent Fractions")
-  const [selectedObjectives, setSelectedObjectives] = useState<string[]>([
-    DEFAULT_OBJECTIVES[0],
-    DEFAULT_OBJECTIVES[1],
-  ])
-  const [customObjective, setCustomObjective] = useState<string>("")
-  const [customObjectives, setCustomObjectives] = useState<string[]>([])
+  const [classes, setClasses] = useState<ClassRow[]>([])
+  const [subjects, setSubjects] = useState<SubjectRow[]>([])
+  const [modules, setModules] = useState<ModuleRow[]>([])
+  const [sections, setSections] = useState<SectionRow[]>([])
+  const [classId, setClassId] = useState<string>("")
+  const [subjectId, setSubjectId] = useState<string>("")
+  const [moduleId, setModuleId] = useState<string>("")
+  const [sectionId, setSectionId] = useState<string>("")
 
-  const objectives = useMemo(
-    () => [...DEFAULT_OBJECTIVES, ...customObjectives],
-    [customObjectives]
-  )
+  const isComplete = Boolean(classId && subjectId && moduleId && sectionId)
 
-  const isComplete =
-    Boolean(subject) &&
-    Boolean(grade) &&
-    lessonTitle.trim().length > 0 &&
-    selectedObjectives.length > 0
-
-  const toggleObjective = (value: string) => {
-    setSelectedObjectives((prev) =>
-      prev.includes(value) ? prev.filter((item) => item !== value) : [...prev, value]
-    )
-  }
-
-  const addCustomObjective = () => {
-    const trimmed = customObjective.trim()
-    if (!trimmed) return
-    if (!customObjectives.includes(trimmed)) {
-      setCustomObjectives((prev) => [...prev, trimmed])
-      setSelectedObjectives((prev) => [...prev, trimmed])
+  useEffect(() => {
+    const loadClasses = async () => {
+      try {
+        const res = await fetch("/api/teacher/classes")
+        if (!res.ok) {
+          const text = await res.text()
+          throw new Error(text)
+        }
+        const data = await res.json()
+        setClasses(data || [])
+      } catch (error: any) {
+        toast.error(`Failed to load classes: ${error.message || "Unknown error"}`)
+      }
     }
-    setCustomObjective("")
-  }
+    loadClasses()
+  }, [])
+
+  useEffect(() => {
+    if (!classId) {
+      setSubjects([])
+      setSubjectId("")
+      setModules([])
+      setModuleId("")
+      setSections([])
+      setSectionId("")
+      return
+    }
+
+    const loadSubjects = async () => {
+      try {
+        const res = await fetch(`/api/teacher/classes/${classId}/subjects`)
+        if (!res.ok) {
+          const text = await res.text()
+          throw new Error(text)
+        }
+        const data = await res.json()
+        setSubjects(data || [])
+      } catch (error: any) {
+        toast.error(`Failed to load subjects: ${error.message || "Unknown error"}`)
+      }
+    }
+
+    loadSubjects()
+  }, [classId])
+
+  useEffect(() => {
+    if (!subjectId) {
+      setModules([])
+      setModuleId("")
+      setSections([])
+      setSectionId("")
+      return
+    }
+
+    const loadModules = async () => {
+      try {
+        const res = await fetch(`/api/teacher/subjects/${subjectId}/modules`)
+        if (!res.ok) {
+          const text = await res.text()
+          throw new Error(text)
+        }
+        const data = await res.json()
+        setModules(data || [])
+      } catch (error: any) {
+        toast.error(`Failed to load modules: ${error.message || "Unknown error"}`)
+      }
+    }
+
+    loadModules()
+  }, [subjectId])
+
+  useEffect(() => {
+    if (!moduleId) {
+      setSections([])
+      setSectionId("")
+      return
+    }
+
+    const loadSections = async () => {
+      try {
+        const res = await fetch(`/api/teacher/modules/${moduleId}/sections`)
+        if (!res.ok) {
+          const text = await res.text()
+          throw new Error(text)
+        }
+        const data = await res.json()
+        setSections(data || [])
+      } catch (error: any) {
+        toast.error(`Failed to load sections: ${error.message || "Unknown error"}`)
+      }
+    }
+
+    loadSections()
+  }, [moduleId])
 
   return (
     <div className="rounded-2xl border border-slate-200/80 border-l-4 border-l-slate-900 bg-white p-6 shadow-sm">
@@ -78,43 +168,59 @@ export function LessonSetupWizard({ onContinue }: LessonSetupWizardProps) {
           </p>
         </div>
         <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-right text-xs text-slate-600">
-          <div className="font-semibold text-slate-900">1 of 3</div>
+          <div className="font-semibold text-slate-900">1 of 2</div>
           Guided wizard
         </div>
       </div>
 
       <div className="mt-4 h-2 rounded-full bg-slate-100">
-        <div className="h-2 w-1/3 rounded-full bg-gradient-to-r from-slate-900 to-emerald-500" />
+        <div className="h-2 w-1/2 rounded-full bg-gradient-to-r from-slate-900 to-emerald-500" />
       </div>
 
       <div className="mt-6 grid grid-cols-1 gap-4">
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <div className="space-y-2">
+            <Label className="text-sm font-semibold text-slate-700">Class</Label>
+            <Select
+              value={classId}
+              onValueChange={(value) => {
+                setClassId(value)
+                setSubjectId("")
+                setModuleId("")
+                setSectionId("")
+              }}
+            >
+              <SelectTrigger className="h-11 rounded-xl border-slate-200 bg-white shadow-xs">
+                <SelectValue placeholder="Select class" />
+              </SelectTrigger>
+              <SelectContent>
+                {classes.map((item) => (
+                  <SelectItem key={item.id} value={item.id}>
+                    {item.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
             <Label className="text-sm font-semibold text-slate-700">Subject</Label>
-            <Select value={subject} onValueChange={setSubject}>
-            <SelectTrigger className="h-11 rounded-xl border-slate-200 bg-white shadow-xs">
-              <SelectValue placeholder="Select subject" />
-            </SelectTrigger>
+            <Select
+              value={subjectId}
+              onValueChange={(value) => {
+                setSubjectId(value)
+                setModuleId("")
+                setSectionId("")
+              }}
+              disabled={!classId}
+            >
+              <SelectTrigger className="h-11 rounded-xl border-slate-200 bg-white shadow-xs">
+                <SelectValue placeholder="Select subject" />
+              </SelectTrigger>
               <SelectContent>
-                {SUBJECTS.map((item) => (
-                  <SelectItem key={item} value={item}>
-                    {item}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label className="text-sm font-semibold text-slate-700">Class / Grade</Label>
-            <Select value={grade} onValueChange={setGrade}>
-            <SelectTrigger className="h-11 rounded-xl border-slate-200 bg-white shadow-xs">
-              <SelectValue placeholder="Select class" />
-            </SelectTrigger>
-              <SelectContent>
-                {GRADES.map((item) => (
-                  <SelectItem key={item} value={item}>
-                    {item}
+                {subjects.map((subject) => (
+                  <SelectItem key={subject.id} value={subject.id}>
+                    {subject.title}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -122,64 +228,44 @@ export function LessonSetupWizard({ onContinue }: LessonSetupWizardProps) {
           </div>
         </div>
 
-        <div className="space-y-2">
-          <Label className="text-sm font-semibold text-slate-700">Lesson / Unit</Label>
-          <Input
-            className="h-11 rounded-xl border-slate-200 bg-white shadow-xs"
-            value={lessonTitle}
-            onChange={(event) => setLessonTitle(event.target.value)}
-            placeholder="Fractions - Equivalent Fractions"
-          />
-        </div>
-
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <Label className="text-sm font-semibold text-slate-700">Objectives</Label>
-            <span className="text-xs text-slate-500">Select at least one</span>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div className="space-y-2">
+            <Label className="text-sm font-semibold text-slate-700">Module</Label>
+            <Select
+              value={moduleId}
+              onValueChange={(value) => {
+                setModuleId(value)
+                setSectionId("")
+              }}
+              disabled={!subjectId}
+            >
+              <SelectTrigger className="h-11 rounded-xl border-slate-200 bg-white shadow-xs">
+                <SelectValue placeholder="Select module" />
+              </SelectTrigger>
+              <SelectContent>
+                {modules.map((module) => (
+                  <SelectItem key={module.id} value={module.id}>
+                    {module.title}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="space-y-2">
-            {objectives.map((objective) => {
-              const isChecked = selectedObjectives.includes(objective)
-              return (
-                <label
-                  key={objective}
-                  className={`flex items-start gap-3 rounded-xl border px-3 py-3 text-sm transition ${
-                    isChecked
-                      ? "border-emerald-200 bg-emerald-50 text-emerald-900"
-                      : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    className="mt-1 h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
-                    checked={isChecked}
-                    onChange={() => toggleObjective(objective)}
-                  />
-                  <span>{objective}</span>
-                </label>
-              )
-            })}
-          </div>
-
-          <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-3">
-            <Label className="text-xs font-semibold text-slate-600">Add custom objective (optional)</Label>
-            <div className="mt-2 flex flex-col gap-2 md:flex-row md:items-center">
-              <Input
-                className="h-10 flex-1 rounded-xl border-slate-200 bg-white text-sm shadow-xs"
-                placeholder="e.g., Use number lines to compare fractions"
-                value={customObjective}
-                onChange={(event) => setCustomObjective(event.target.value)}
-              />
-              <Button
-                type="button"
-                variant="outline"
-                className="h-10 rounded-xl border-slate-200 text-sm"
-                onClick={addCustomObjective}
-              >
-                Add objective
-              </Button>
-            </div>
+            <Label className="text-sm font-semibold text-slate-700">Section</Label>
+            <Select value={sectionId} onValueChange={setSectionId} disabled={!moduleId}>
+              <SelectTrigger className="h-11 rounded-xl border-slate-200 bg-white shadow-xs">
+                <SelectValue placeholder="Select section" />
+              </SelectTrigger>
+              <SelectContent>
+                {sections.map((section) => (
+                  <SelectItem key={section.id} value={section.id}>
+                    {section.title}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </div>
       </div>
@@ -202,7 +288,7 @@ export function LessonSetupWizard({ onContinue }: LessonSetupWizardProps) {
           disabled={!isComplete}
           onClick={() => {
             if (isComplete) {
-              onContinue?.()
+              onContinue?.({ classId, subjectId, moduleId, sectionId })
             }
           }}
         >

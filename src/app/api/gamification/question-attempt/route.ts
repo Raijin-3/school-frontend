@@ -26,6 +26,9 @@ export async function POST(req: NextRequest) {
 
     const text = res.status === 204 ? null : await res.text();
     if (!res.ok) {
+      if (text && text.includes("Active gamification config row not found")) {
+        return NextResponse.json({ ok: true, skipped: true });
+      }
       throw new Error(
         text || `Gamification question attempt failed (${res.status})`,
       );

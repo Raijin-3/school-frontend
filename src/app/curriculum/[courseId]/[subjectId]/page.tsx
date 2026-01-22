@@ -7,6 +7,27 @@ import { SubjectLearningInterface } from "@/components/subject-learning-interfac
 
 type Track = any;
 type CurriculumList = { tracks?: Array<{ id?: string; slug?: string; title?: string }> };
+type TriggerConfig = {
+  aiHint?: boolean;
+  aiExercise?: boolean;
+  playground?: boolean;
+  aiSubmission?: boolean;
+  aiAdaptiveQuiz?: boolean;
+};
+type StudentAssignmentDetail = {
+  assignment_id?: string;
+  subject_id?: string;
+  assigned_at?: string;
+  lesson_assignments?: {
+    id?: string;
+    class_id?: string;
+    subject_id?: string;
+    module_id?: string;
+    section_id?: string | null;
+    trigger_config?: TriggerConfig | null;
+    assigned_at?: string;
+  };
+};
 
 const normalizeBaseUrl = (input?: string | null) => {
   if (!input) return "";
@@ -49,6 +70,18 @@ const parseLectureContent = (raw: unknown, baseUrl: string): string => {
     // ignore parse errors and return original string
   }
   return trimmed;
+};
+
+const normalizeTriggerConfig = (value: unknown): TriggerConfig => {
+  if (!value || typeof value !== "object") return {};
+  const raw = value as Record<string, unknown>;
+  return {
+    aiHint: raw.aiHint === true,
+    aiExercise: raw.aiExercise === true,
+    playground: raw.playground === true,
+    aiSubmission: raw.aiSubmission === true,
+    aiAdaptiveQuiz: raw.aiAdaptiveQuiz === true,
+  };
 };
 
 const normalizeLecture = (lecture: any, baseUrl: string) => {
@@ -496,6 +529,93 @@ export default async function SubjectPage({
       return keyA.localeCompare(keyB);
     });
 
+  let lessonToolConfigBySection: Record<string, TriggerConfig> | undefined;
+  try {
+    const assignmentDetails = await apiGet<StudentAssignmentDetail[]>(
+      `/v1/student/lesson-assignments/details?subject_id=${encodeURIComponent(subject?.id || subjectParam)}`,
+    );
+    const assignedSectionIds = new Set<string>();
+    const assignedModuleIds = new Set<string>();
+    const normalizedAssignments = Array.isArray(assignmentDetails) ? assignmentDetails : [];
+
+    normalizedAssignments.forEach((entry) => {
+      const assignment = entry?.lesson_assignments;
+      const moduleId = assignment?.module_id ? String(assignment.module_id) : null;
+      const sectionId = assignment?.section_id ? String(assignment.section_id) : null;
+
+      if (sectionId) {
+        assignedSectionIds.add(sectionId);
+        if (moduleId) {
+          assignedModuleIds.add(moduleId);
+        }
+      } else if (moduleId) {
+        assignedModuleIds.add(moduleId);
+      }
+    });
+
+    if (assignedSectionIds.size > 0 || assignedModuleIds.size > 0) {
+      subjectModules = subjectModules
+        .map((module: any) => {
+          const moduleId = module?.id ? String(module.id) : "";
+          const allowAllSections = moduleId && assignedModuleIds.has(moduleId);
+          const sections = (module?.sections || []).filter((section: any) => {
+            const sectionId = section?.id ? String(section.id) : "";
+            return allowAllSections || assignedSectionIds.has(sectionId);
+          });
+          return {
+            ...module,
+            sections,
+          };
+        })
+        .filter((module: any) => (module?.sections || []).length > 0);
+    } else {
+      subjectModules = [];
+    }
+
+    const moduleSectionMap = new Map<string, string[]>();
+    subjectModules.forEach((module: any) => {
+      const moduleId = module?.id ? String(module.id) : "";
+      if (!moduleId) return;
+      const sections = Array.isArray(module?.sections)
+        ? module.sections
+            .map((section: any) => (section?.id ? String(section.id) : ""))
+            .filter(Boolean)
+        : [];
+      moduleSectionMap.set(moduleId, sections);
+    });
+
+    const toolConfigBySection: Record<string, TriggerConfig> = {};
+    const applyToolConfig = (sectionId: string | null, config: TriggerConfig) => {
+      if (!sectionId) return;
+      if (!Object.prototype.hasOwnProperty.call(toolConfigBySection, sectionId)) {
+        toolConfigBySection[sectionId] = config;
+      }
+    };
+
+    normalizedAssignments.forEach((entry) => {
+      const assignment = entry?.lesson_assignments;
+      const moduleId = assignment?.module_id ? String(assignment.module_id) : null;
+      const sectionId = assignment?.section_id ? String(assignment.section_id) : null;
+      const config = normalizeTriggerConfig(assignment?.trigger_config);
+
+      if (sectionId) {
+        applyToolConfig(sectionId, config);
+        return;
+      }
+
+      if (moduleId) {
+        const sections = moduleSectionMap.get(moduleId) ?? [];
+        sections.forEach((id) => applyToolConfig(id, config));
+      }
+    });
+
+    if (Object.keys(toolConfigBySection).length > 0) {
+      lessonToolConfigBySection = toolConfigBySection;
+    }
+  } catch (error) {
+    console.warn("Failed to load assigned sections; showing all sections by default.");
+  }
+
   const optionalModuleIds = subjectModules
     .filter((module: any) => {
       const activeState = resolveModuleActiveState(module);
@@ -546,7 +666,7 @@ export default async function SubjectPage({
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/20 to-indigo-50/30">
       <MobileSidebar active="/curriculum" />
       <div className="lg:flex lg:gap-6 max-w-screen-2xl mx-auto p-4 md:p-6">
-        <Sidebar active="/curriculum" />
+        <Sidebar active="/curriculum" defaultOpen={false} />
 
         <div className="flex-1">
           <SubjectLearningInterface
@@ -560,10 +680,13 @@ export default async function SubjectPage({
             initialModuleSlug={initialModuleSlug}
             courseSlugForUrl={courseSlugForUrl}
             subjectSlugForUrl={subjectSlugForUrl}
-            allowedModuleIds={effectiveAllowedModuleIds}
+            allowedModuleIds={undefined}
             moduleStatusOverrides={
               Object.keys(moduleStatusOverrides).length ? moduleStatusOverrides : undefined
             }
+            lessonToolConfigBySection={lessonToolConfigBySection}
+            lockModules={false}
+            showRequirements={false}
           />
         </div>
       </div>

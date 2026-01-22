@@ -267,15 +267,24 @@ export async function recordQuestionAttempt(
     });
     const text = res.status === 204 ? null : await res.text();
     if (!res.ok) {
+      if (text && text.includes("Active gamification config row not found")) {
+        return;
+      }
       throw new Error(
         text || `Gamification question attempt failed (${res.status})`,
       );
+    }
+    if (text) {
+      console.log("[gamification] question-attempt response:", text);
+    } else {
+      console.log("[gamification] question-attempt response: empty");
     }
     const shouldCelebrate = !options?.suppressCelebration;
     let xpAwardedFromResponse: number | undefined;
     if (text) {
       try {
         const data = JSON.parse(text);
+        console.log("[gamification] question-attempt parsed:", data);
         if (typeof data?.xpAwarded === "number") {
           xpAwardedFromResponse = data.xpAwarded;
         }

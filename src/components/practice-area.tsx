@@ -228,6 +228,9 @@ type PracticeAreaProps = {
   exerciseTitle?: string;
   exerciseDifficulty?: string | null;
   answersMap?: Record<string, string> | null;
+  focusMode?: boolean;
+  allowHint?: boolean;
+  allowSubmission?: boolean;
   onSubmit?: (
     questionId: string,
     solution: string
@@ -320,11 +323,14 @@ export function PracticeArea({
   exerciseTitle,
   exerciseDifficulty,
   answersMap,
+  focusMode = false,
   onSubmit,
   onRequestHint,
   onNext,
   onPrevious,
   practiceDatasetLoading = false,
+  allowHint = true,
+  allowSubmission = true,
 }: PracticeAreaProps) {
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [userCode, setUserCode] = useState('');
@@ -350,6 +356,8 @@ export function PracticeArea({
 
   const currentQuestion = questions[currentQuestionIndex];
   const currentDataset = datasets[currentQuestionIndex];
+  const focusModeEnabled = focusMode === true;
+  const needsCodeEditor = ['sql', 'python', 'statistics', 'google_sheets'].includes(exerciseType);
   const [expandedDatasetTables, setExpandedDatasetTables] = useState<Record<string, boolean>>({});
   const toggleDatasetTableExpansion = (tableKey: string) => {
     setExpandedDatasetTables((prev) => ({
@@ -739,8 +747,11 @@ export function PracticeArea({
     };
   }, [currentExerciseId, currentQuestionId]);
 
+  const canSubmit = Boolean(allowSubmission && onSubmit);
+  const canRequestHint = Boolean(allowHint && onRequestHint);
+
   const handleSubmit = useCallback(async () => {
-    if (!onSubmit || !currentQuestion) return;
+    if (!canSubmit || !currentQuestion) return;
 
     setIsSubmitting(true);
     setIsTimerRunning(false);
@@ -767,6 +778,7 @@ export function PracticeArea({
       }
     }
   }, [
+    canSubmit,
     onSubmit,
     currentQuestion,
     currentQuestionId,
@@ -776,7 +788,7 @@ export function PracticeArea({
   ]);
 
   const handleHintRequest = useCallback(async () => {
-    if (!onRequestHint || !currentQuestion) {
+    if (!canRequestHint || !currentQuestion) {
       return;
     }
     setIsRequestingHint(true);
@@ -798,7 +810,7 @@ export function PracticeArea({
     } finally {
       setIsRequestingHint(false);
     }
-  }, [onRequestHint, currentQuestion, userCode]);
+  }, [canRequestHint, onRequestHint, currentQuestion, userCode]);
 
   const handleNext = useCallback(() => {
     if (currentQuestionIndex < questions.length - 1) {
@@ -843,6 +855,210 @@ export function PracticeArea({
             <span>Next</span>
             <ChevronRight className="w-4 h-4" />
           </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (focusModeEnabled) {
+    const progressPercent =
+      questions.length > 0 ? ((currentQuestionIndex + 1) / questions.length) * 100 : 0;
+    return (
+      <div className="flex h-full flex-col gap-6">
+        <div className="rounded-2xl border border-slate-200 bg-white px-6 py-4 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                Practice
+              </p>
+              <h2 className="text-xl font-semibold text-slate-900">
+                {exerciseTitle || 'Practice Exercise'}
+              </h2>
+            </div>
+            <div className="text-base font-semibold text-slate-600">
+              Question {currentQuestionIndex + 1} of {questions.length}
+            </div>
+          </div>
+          <div className="mt-3 h-2 w-full rounded-full bg-slate-100">
+            <div
+              className="h-2 rounded-full bg-indigo-500 transition-all duration-300"
+              style={{ width: `${progressPercent}%` }}
+            />
+          </div>
+          <p className="mt-2 text-sm text-slate-500">Read, answer, check, then continue.</p>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="space-y-4">
+            <div className="text-xl font-semibold text-slate-900">Question</div>
+            <div className="text-lg leading-relaxed text-slate-700">
+              <RichContent content={resolvedQuestionText} className="text-slate-700" />
+            </div>
+            {currentDataset && (
+              <div className="rounded-xl border border-slate-200">
+                <button
+                  onClick={() => setShowDataset(!showDataset)}
+                  className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  <span>Show data</span>
+                  {showDataset ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+                {showDataset && (
+                  <div className="px-4 pb-4">
+                    {practiceDatasetLoading ? (
+                      <div className="py-6 text-center text-xs text-slate-400">
+                        Loading dataset preview...
+                      </div>
+                    ) : (
+                      datasetRows.length > 0 && (
+                        <>
+                          {groupedDatasetTables ? (
+                            groupedDatasetTables.map((group, index) => {
+                              const key = `${group.tableName || 'Table'}-${index}`;
+                              const isExpanded = Boolean(expandedDatasetTables[key]);
+                              const visibleRows = isExpanded
+                                ? group.rows
+                                : group.rows.slice(0, 5);
+                              return (
+                                <div key={key} className="mb-4 last:mb-0">
+                                  <div className="flex items-center justify-between text-xs text-slate-500 mb-2">
+                                    <span className="font-medium text-slate-700">
+                                      Table: {group.tableName}
+                                    </span>
+                                    {group.rows.length > 5 && (
+                                      <button
+                                        type="button"
+                                        onClick={() => toggleDatasetTableExpansion(key)}
+                                        className="text-xs text-slate-500 underline decoration-dotted underline-offset-2"
+                                      >
+                                        {isExpanded ? 'Show first 5 rows' : 'Show all rows'}
+                                      </button>
+                                    )}
+                                  </div>
+                                  {renderDatasetRowsTable(group.columns, visibleRows)}
+                                </div>
+                              );
+                            })
+                          ) : (
+                            <>
+                              {datasetRows.length > 5 && (
+                                <div className="mb-2 flex items-center justify-end text-xs text-slate-500">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      toggleDatasetTableExpansion(DATASET_DEFAULT_TABLE_KEY)
+                                    }
+                                    className="underline decoration-dotted underline-offset-2"
+                                  >
+                                    {expandedDatasetTables[DATASET_DEFAULT_TABLE_KEY]
+                                      ? 'Show first 5 rows'
+                                      : 'Show all rows'}
+                                  </button>
+                                </div>
+                              )}
+                              {renderDatasetRowsTable(
+                                datasetDefaultColumns,
+                                expandedDatasetTables[DATASET_DEFAULT_TABLE_KEY]
+                                  ? datasetRows
+                                  : datasetRows.slice(0, 5),
+                              )}
+                            </>
+                          )}
+                        </>
+                      )
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="space-y-3">
+            <div className="text-lg font-semibold text-slate-900">
+              {needsCodeEditor ? 'Your solution' : 'Your answer'}
+            </div>
+            <textarea
+              value={userCode}
+              onChange={(e) => setUserCode(e.target.value)}
+              className={`w-full rounded-xl border border-slate-200 p-4 text-lg text-slate-800 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-200 ${
+                needsCodeEditor ? 'font-mono min-h-[220px]' : 'min-h-[180px]'
+              }`}
+              placeholder={
+                needsCodeEditor
+                  ? `Write your ${getLanguageDisplayName(exerciseType)} solution here...`
+                  : 'Type your answer here...'
+              }
+              style={needsCodeEditor ? { tabSize: 2 } : undefined}
+            />
+            {submissionResult ? (
+              <div
+                className={`rounded-xl border p-3 text-sm ${
+                  submissionResult.isCorrect
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                    : 'border-rose-200 bg-rose-50 text-rose-800'
+                }`}
+              >
+                <div className="font-semibold">
+                  {submissionResult.verdict
+                    ? submissionResult.verdict
+                    : submissionResult.isCorrect
+                      ? 'Nice work!'
+                      : 'Try again'}
+                </div>
+                {submissionResult.feedback ? (
+                  <div className="mt-2 text-sm">
+                    <RichContent content={submissionResult.feedback} />
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+            {hintResult ? (
+              <div className="rounded-xl border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-900">
+                <div className="font-semibold">Hint</div>
+                <div className="mt-1">{hintResult.message}</div>
+              </div>
+            ) : null}
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handlePrevious}
+                  disabled={currentQuestionIndex === 0}
+                  className="rounded-full border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Previous
+                </button>
+                {canRequestHint ? (
+                  <button
+                    onClick={handleHintRequest}
+                    disabled={isRequestingHint}
+                    className="rounded-full border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {isRequestingHint ? 'Loading hint...' : 'Need a hint?'}
+                  </button>
+                ) : null}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleNext}
+                  disabled={currentQuestionIndex === questions.length - 1}
+                  className="rounded-full border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Next
+                </button>
+                {canSubmit && (
+                  <button
+                    onClick={handleSubmit}
+                    disabled={isSubmitting}
+                    className="rounded-full bg-indigo-600 px-5 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {isSubmitting ? 'Checking...' : 'Check my answer'}
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -1099,7 +1315,7 @@ export function PracticeArea({
               <RefreshCw className="w-3 h-3" />
               Reset
             </button>
-            {onRequestHint ? (
+            {canRequestHint ? (
               <button
                 onClick={handleHintRequest}
                 disabled={isRequestingHint}
@@ -1113,18 +1329,20 @@ export function PracticeArea({
                 {isRequestingHint ? 'Hinting...' : 'Get Hint'}
               </button>
             ) : null}
-            <button
-              onClick={handleSubmit}
-              disabled={isSubmitting}
-              className="flex items-center gap-1 px-3 py-1 text-sm bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded"
-            >
-              {isSubmitting ? (
-                <RefreshCw className="w-3 h-3 animate-spin" />
-              ) : (
-                <Play className="w-3 h-3" />
-              )}
-              {isSubmitting ? 'Running...' : 'Submit'}
-            </button>
+            {canSubmit && (
+              <button
+                onClick={handleSubmit}
+                disabled={isSubmitting}
+                className="flex items-center gap-1 px-3 py-1 text-sm bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded"
+              >
+                {isSubmitting ? (
+                  <RefreshCw className="w-3 h-3 animate-spin" />
+                ) : (
+                  <Play className="w-3 h-3" />
+                )}
+                {isSubmitting ? 'Running...' : 'Submit'}
+              </button>
+            )}
           </div>
         </div>
 

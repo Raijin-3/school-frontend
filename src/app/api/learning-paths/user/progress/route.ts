@@ -359,20 +359,34 @@ const persistModuleProgress = async ({
   correctnessPercentage?: number | null;
   progressPercent: number;
 }) => {
-  const { error } = await supabaseClient.from("user_module_status").upsert(
-    {
-      user_id: userId,
-      module_id: moduleId,
-      status,
-      correctness_percentage:
-        typeof correctnessPercentage === "number"
-          ? correctnessPercentage
-          : 0,
-      progress: Math.max(0, Math.min(100, Math.round(progressPercent))),
-      last_updated: new Date().toISOString(),
-    },
-    { onConflict: "user_id,module_id" },
-  );
+  const payload = {
+    user_id: userId,
+    module_id: moduleId,
+    status,
+    correctness_percentage:
+      typeof correctnessPercentage === "number"
+        ? correctnessPercentage
+        : 0,
+    progress: Math.max(0, Math.min(100, Math.round(progressPercent))),
+    last_updated: new Date().toISOString(),
+  };
+  const existing = await supabaseClient
+    .from("user_module_status")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .eq("module_id", moduleId);
+  if ((existing.count ?? 0) > 0) {
+    const { error } = await supabaseClient
+      .from("user_module_status")
+      .update(payload)
+      .eq("user_id", userId)
+      .eq("module_id", moduleId);
+    if (error) {
+      throw new Error(`module_progress_upsert_failed:${error.message}`);
+    }
+    return;
+  }
+  const { error } = await supabaseClient.from("user_module_status").insert(payload);
   if (error) {
     throw new Error(`module_progress_upsert_failed:${error.message}`);
   }
@@ -683,18 +697,27 @@ export async function POST(request: NextRequest) {
 
     const insertQuizAttempt = async () => {
       if (activity !== "quiz" || !sectionId) return { recorded: false };
-      const { error } = await sb.from("user_section_quiz_attempts").upsert(
-        {
-          user_id: user.id,
-          course_id: courseId ?? null,
-          subject_id: subjectId ?? null,
-          module_id: normalizedModuleId,
-          section_id: sectionId,
-          question_id: quizQuestionId ?? null,
-          attempted_at: new Date().toISOString(),
-        },
-        { onConflict: "user_id,section_id,question_id" },
-      );
+      const existingQuery = sb
+        .from("user_section_quiz_attempts")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", user.id)
+        .eq("section_id", sectionId);
+      const existing =
+        quizQuestionId != null
+          ? await existingQuery.eq("question_id", quizQuestionId)
+          : await existingQuery.is("question_id", null);
+      if ((existing.count ?? 0) > 0) {
+        return { recorded: true };
+      }
+      const { error } = await sb.from("user_section_quiz_attempts").insert({
+        user_id: user.id,
+        course_id: courseId ?? null,
+        subject_id: subjectId ?? null,
+        module_id: normalizedModuleId,
+        section_id: sectionId,
+        question_id: quizQuestionId ?? null,
+        attempted_at: new Date().toISOString(),
+      });
       if (error) {
         console.error("Failed to record quiz attempt:", error.message);
         throw new Error(`quiz_attempt_insert_failed:${error.message}`);
@@ -734,14 +757,14 @@ export async function POST(request: NextRequest) {
       ) {
         return { recorded: false };
       }
-      const payload = {
-        student_id: user.id,
-        exercise_id: exerciseId,
-        question_id: exerciseQuestionId,
-        user_answer: exerciseUserAnswer ?? null,
-        is_correct: typeof exerciseIsCorrect === "boolean" ? exerciseIsCorrect : true,
-        submitted_at: new Date().toISOString(),
-      };
+    const payload = {
+      student_id: user.id,
+      exercise_id: exerciseId,
+      question_id: exerciseQuestionId,
+      user_answer: (exerciseUserAnswer ?? "").trim() || "answer not provided",
+      is_correct: typeof exerciseIsCorrect === "boolean" ? exerciseIsCorrect : true,
+      submitted_at: new Date().toISOString(),
+    };
       const { error } = await sb
         .from("section_exercise_question_submissions")
         .insert(payload);
