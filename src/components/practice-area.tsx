@@ -228,6 +228,8 @@ type PracticeAreaProps = {
   exerciseTitle?: string;
   exerciseDifficulty?: string | null;
   answersMap?: Record<string, string> | null;
+  allowHint?: boolean;
+  allowSubmission?: boolean;
   onSubmit?: (
     questionId: string,
     solution: string
@@ -325,6 +327,8 @@ export function PracticeArea({
   onNext,
   onPrevious,
   practiceDatasetLoading = false,
+  allowHint = true,
+  allowSubmission = true,
 }: PracticeAreaProps) {
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [userCode, setUserCode] = useState('');
@@ -739,8 +743,11 @@ export function PracticeArea({
     };
   }, [currentExerciseId, currentQuestionId]);
 
+  const canSubmit = Boolean(allowSubmission && onSubmit);
+  const canRequestHint = Boolean(allowHint && onRequestHint);
+
   const handleSubmit = useCallback(async () => {
-    if (!onSubmit || !currentQuestion) return;
+    if (!canSubmit || !currentQuestion) return;
 
     setIsSubmitting(true);
     setIsTimerRunning(false);
@@ -767,6 +774,7 @@ export function PracticeArea({
       }
     }
   }, [
+    canSubmit,
     onSubmit,
     currentQuestion,
     currentQuestionId,
@@ -776,7 +784,7 @@ export function PracticeArea({
   ]);
 
   const handleHintRequest = useCallback(async () => {
-    if (!onRequestHint || !currentQuestion) {
+    if (!canRequestHint || !currentQuestion) {
       return;
     }
     setIsRequestingHint(true);
@@ -798,7 +806,7 @@ export function PracticeArea({
     } finally {
       setIsRequestingHint(false);
     }
-  }, [onRequestHint, currentQuestion, userCode]);
+  }, [canRequestHint, onRequestHint, currentQuestion, userCode]);
 
   const handleNext = useCallback(() => {
     if (currentQuestionIndex < questions.length - 1) {
@@ -1099,7 +1107,7 @@ export function PracticeArea({
               <RefreshCw className="w-3 h-3" />
               Reset
             </button>
-            {onRequestHint ? (
+            {canRequestHint ? (
               <button
                 onClick={handleHintRequest}
                 disabled={isRequestingHint}
@@ -1113,18 +1121,20 @@ export function PracticeArea({
                 {isRequestingHint ? 'Hinting...' : 'Get Hint'}
               </button>
             ) : null}
-            <button
-              onClick={handleSubmit}
-              disabled={isSubmitting}
-              className="flex items-center gap-1 px-3 py-1 text-sm bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded"
-            >
-              {isSubmitting ? (
-                <RefreshCw className="w-3 h-3 animate-spin" />
-              ) : (
-                <Play className="w-3 h-3" />
-              )}
-              {isSubmitting ? 'Running...' : 'Submit'}
-            </button>
+            {canSubmit && (
+              <button
+                onClick={handleSubmit}
+                disabled={isSubmitting}
+                className="flex items-center gap-1 px-3 py-1 text-sm bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded"
+              >
+                {isSubmitting ? (
+                  <RefreshCw className="w-3 h-3 animate-spin" />
+                ) : (
+                  <Play className="w-3 h-3" />
+                )}
+                {isSubmitting ? 'Running...' : 'Submit'}
+              </button>
+            )}
           </div>
         </div>
 

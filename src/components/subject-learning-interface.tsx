@@ -3545,6 +3545,14 @@ const getDefaultResource = (section?: Section | null): SelectedResource | null =
 
 };
 
+type LessonToolConfig = {
+  aiHint?: boolean;
+  aiExercise?: boolean;
+  playground?: boolean;
+  aiSubmission?: boolean;
+  aiAdaptiveQuiz?: boolean;
+};
+
 export function SubjectLearningInterface({
   trackTitle,
   subjectTitle,
@@ -3558,6 +3566,9 @@ export function SubjectLearningInterface({
   subjectSlugForUrl,
   allowedModuleIds,
   moduleStatusOverrides,
+  lessonToolConfigBySection,
+  showRequirements = true,
+  lockModules = true,
 }: {
   trackTitle: string;
   subjectTitle?: string | null;
@@ -3571,6 +3582,9 @@ export function SubjectLearningInterface({
   subjectSlugForUrl?: string;
   allowedModuleIds?: string[];
   moduleStatusOverrides?: Record<string, string | null | undefined>;
+  lessonToolConfigBySection?: Record<string, LessonToolConfig>;
+  showRequirements?: boolean;
+  lockModules?: boolean;
 }) {
   // Authentication state
   const [userId, setUserId] = useState<string | null>(null);
@@ -4290,6 +4304,9 @@ export function SubjectLearningInterface({
 
   const isModuleAccessible = useCallback(
     (module?: Module) => {
+      if (!lockModules) {
+        return true;
+      }
       const rawKey = module?.slug ?? module?.id;
       const normalizedKey = rawKey ? String(rawKey) : undefined;
 
@@ -4335,6 +4352,7 @@ export function SubjectLearningInterface({
       getModuleActivationState,
       manualUnlockedModuleIds,
       hasPreviousMandatoryCompleted,
+      lockModules,
     ],
   );
 
@@ -4621,6 +4639,14 @@ export function SubjectLearningInterface({
     [allSections, selectedSectionId]
 
   );
+  const hasLessonToolConfig = lessonToolConfigBySection !== undefined;
+  const resolveToolEnabled = (value?: boolean) => (hasLessonToolConfig ? value === true : true);
+  const selectedSectionToolConfig =
+    selectedSectionId && lessonToolConfigBySection
+      ? lessonToolConfigBySection[String(selectedSectionId)]
+      : undefined;
+  const allowWorkspaceHint = resolveToolEnabled(selectedSectionToolConfig?.aiHint);
+  const allowWorkspaceSubmission = resolveToolEnabled(selectedSectionToolConfig?.aiSubmission);
 
   const defaultSelectedResource = useMemo(() => getDefaultResource(selectedSection), [selectedSection]);
 
@@ -17054,18 +17080,20 @@ export function SubjectLearningInterface({
                         Summarize your findings before submitting for review.
                       </p>
                     </div>
-                    <button
-                      onClick={handleWorkspaceHintClick}
-                      disabled={!userId || isRequestingWorkspaceHint}
-                      className="inline-flex items-center gap-2 rounded-full border border-amber-400 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      {isRequestingWorkspaceHint ? (
-                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-amber-400 border-t-transparent" />
-                      ) : (
-                        <Lightbulb className="h-3.5 w-3.5" />
-                      )}
-                      <span>{isRequestingWorkspaceHint ? "Hinting..." : "Hint"}</span>
-                    </button>
+                    {allowWorkspaceHint && (
+                      <button
+                        onClick={handleWorkspaceHintClick}
+                        disabled={!userId || isRequestingWorkspaceHint}
+                        className="inline-flex items-center gap-2 rounded-full border border-amber-400 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {isRequestingWorkspaceHint ? (
+                          <div className="h-4 w-4 animate-spin rounded-full border-2 border-amber-400 border-t-transparent" />
+                        ) : (
+                          <Lightbulb className="h-3.5 w-3.5" />
+                        )}
+                        <span>{isRequestingWorkspaceHint ? "Hinting..." : "Hint"}</span>
+                      </button>
+                    )}
                   </div>
                 <div className="space-y-3 px-5 py-4">
                   <p className="text-sm font-semibold text-slate-600">
@@ -17079,13 +17107,15 @@ export function SubjectLearningInterface({
                       className="w-full resize-none rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm leading-6 text-slate-700 shadow-inner focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
                     />
                     <div className="flex flex-wrap justify-end gap-2">
-                      <button
-                        onClick={handleWorkspaceSubmitClick}
-                        disabled={isSubmittingWorkspace || !worksheetSolution.trim()}
-                        className="flex items-center gap-2 rounded-lg border border-emerald-500 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        {isSubmittingWorkspace ? "Submitting..." : "Submit"}
-                      </button>
+                      {allowWorkspaceSubmission && (
+                        <button
+                          onClick={handleWorkspaceSubmitClick}
+                          disabled={isSubmittingWorkspace || !worksheetSolution.trim()}
+                          className="flex items-center gap-2 rounded-lg border border-emerald-500 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {isSubmittingWorkspace ? "Submitting..." : "Submit"}
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -17602,18 +17632,20 @@ export function SubjectLearningInterface({
                         <span>Running...</span>
                       </div>
                     )}
-                    <button
-                      onClick={handleWorkspaceHintClick}
-                      disabled={!userId || isRequestingWorkspaceHint}
-                      className="flex items-center gap-2 rounded-lg border border-amber-400 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-700 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      {isRequestingWorkspaceHint ? (
-                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-amber-400 border-t-transparent" />
-                      ) : (
-                        <Lightbulb className="h-4 w-4" />
-                      )}
-                      <span>{isRequestingWorkspaceHint ? "Hinting..." : "Hint"}</span>
-                    </button>
+                    {allowWorkspaceHint && (
+                      <button
+                        onClick={handleWorkspaceHintClick}
+                        disabled={!userId || isRequestingWorkspaceHint}
+                        className="flex items-center gap-2 rounded-lg border border-amber-400 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-700 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {isRequestingWorkspaceHint ? (
+                          <div className="h-4 w-4 animate-spin rounded-full border-2 border-amber-400 border-t-transparent" />
+                        ) : (
+                          <Lightbulb className="h-4 w-4" />
+                        )}
+                        <span>{isRequestingWorkspaceHint ? "Hinting..." : "Hint"}</span>
+                      </button>
+                    )}
                   </div>
                 </div>
                 <div className="mt-4 flex min-h-[280px] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-slate-950 shadow-inner">
@@ -17682,13 +17714,15 @@ export function SubjectLearningInterface({
                         <Play className="h-4 w-4" />
                         {isExecutingSql || isExecutingPython ? "Running..." : "Run"}
                       </button>
-                      <button
-                        onClick={handleWorkspaceSubmitClick}
-                        disabled={isSubmittingWorkspace}
-                        className="rounded-lg border border-emerald-500 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        {isSubmittingWorkspace ? "Submitting..." : "Submit"}
-                      </button>
+                      {allowWorkspaceSubmission && (
+                        <button
+                          onClick={handleWorkspaceSubmitClick}
+                          disabled={isSubmittingWorkspace}
+                          className="rounded-lg border border-emerald-500 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {isSubmittingWorkspace ? "Submitting..." : "Submit"}
+                        </button>
+                      )}
                       <button
                         onClick={() => handleNavigateExerciseQuestion(1)}
                         disabled={!hasNextQuestion || isPreparingDuckDb || isDuckDbLoading}
@@ -18106,7 +18140,9 @@ export function SubjectLearningInterface({
               null
             }
             onSubmit={handlePracticeSubmit}
-            onRequestHint={handlePracticeHintRequest}
+            onRequestHint={allowWorkspaceHint ? handlePracticeHintRequest : undefined}
+            allowHint={allowWorkspaceHint}
+            allowSubmission={allowWorkspaceSubmission}
             practiceDatasetLoading={isPracticeDatasetLoading}
           />
           <div className="border-t border-dashed border-slate-200 px-4 py-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -18362,7 +18398,7 @@ export function SubjectLearningInterface({
 
             <h2 className="font-semibold text-gray-900">Course Content</h2>
 
-            {debugUiEnabled ? (
+            {showRequirements && lockModules && debugUiEnabled ? (
               <div className="ml-auto flex flex-wrap items-center gap-2">
                 {manualUnlockedModuleList.length > 0 ? (
                   <button
@@ -18444,7 +18480,7 @@ export function SubjectLearningInterface({
 
               key={module.slug || `module-${moduleIndex}`}
 
-              className={`rounded-2xl border border-white/60 bg-gradient-to-br from-white/80 to-white/60 backdrop-blur-xl shadow-lg overflow-hidden ${moduleAccessible ? "" : "opacity-70"}`}
+              className={`rounded-2xl border border-white/60 bg-gradient-to-br from-white/80 to-white/60 backdrop-blur-xl shadow-lg overflow-hidden ${lockModules && !moduleAccessible ? "opacity-70" : ""}`}
 
             >
 
@@ -18466,7 +18502,7 @@ export function SubjectLearningInterface({
                       {moduleStatusLabel}
                     </span>
                   ) : null}
-                  {!moduleAccessible && (
+                  {lockModules && !moduleAccessible && (
                     <div className="inline-flex items-center gap-2">
                       <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600">
                         <Lock className="h-3.5 w-3.5" /> Locked
@@ -18492,35 +18528,22 @@ export function SubjectLearningInterface({
 
                 </p>
 
-                <div className="mt-3 space-y-2">
-                  <div className="flex items-center justify-between text-[11px] font-semibold text-slate-600">
-                    <span>Requirements</span>
-                    <span>
-                      {displayRequirementMetCount}/{displayRequirementTotalCount} met
-                    </span>
-                  </div>
-                  <div className="h-1.5 w-full rounded-full bg-slate-200">
-                    <div
-                      className={`h-full rounded-full ${displayRequirementCompleted ? "bg-emerald-500" : "bg-indigo-500"}`}
-                      style={{ width: `${displayRequirementPercent}%` }}
-                    />
-                  </div>
-                  {/* <div className="flex flex-wrap gap-2 text-[11px] text-slate-600">
-                    {requirementBadges.map((item) => (
-                      <span
-                        key={item.label}
-                        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 border ${
-                          item.met
-                            ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                            : "border-slate-200 bg-slate-50 text-slate-500"
-                        }`}
-                      >
-                        {item.met ? <CheckCircle className="h-3 w-3" /> : <Circle className="h-3 w-3" />}
-                        {item.label}
+                {showRequirements && (
+                  <div className="mt-3 space-y-2">
+                    <div className="flex items-center justify-between text-[11px] font-semibold text-slate-600">
+                      <span>Requirements</span>
+                      <span>
+                        {displayRequirementMetCount}/{displayRequirementTotalCount} met
                       </span>
-                    ))}
-                  </div> */}
-                </div>
+                    </div>
+                    <div className="h-1.5 w-full rounded-full bg-slate-200">
+                      <div
+                        className={`h-full rounded-full ${displayRequirementCompleted ? "bg-emerald-500" : "bg-indigo-500"}`}
+                        style={{ width: `${displayRequirementPercent}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
 
               </div>
 
@@ -18569,8 +18592,11 @@ export function SubjectLearningInterface({
 
                       : null;
 
-                    const isFirstSectionOfFirstModule = moduleIndex === 0 && moduleSectionIndex === 0;
-                    const shouldHideGenerationButtons = isFirstSectionOfFirstModule;
+                    const sectionToolConfig = section?.id
+                      ? lessonToolConfigBySection?.[String(section.id)]
+                      : undefined;
+                    const allowAiExercise = resolveToolEnabled(sectionToolConfig?.aiExercise);
+                    const allowAiAdaptiveQuiz = resolveToolEnabled(sectionToolConfig?.aiAdaptiveQuiz);
 
                     const sectionExercisesData = sectionExercises[section.id];
                     // console.log("Section Exercises Data:", sectionExercisesData);
@@ -18795,19 +18821,21 @@ export function SubjectLearningInterface({
                             ) : null} */}
                           </div>
 
-                          <div
-                            className={`mt-1 text-xs ${
-                              sectionCompleted
-                                ? "text-emerald-600"
-                                : isCurrentSection
-                                ? "text-indigo-600"
-                                : "text-slate-500"
-                            }`}
-                          >
-                            {sectionCompleted
-                              ? "All requirements met"
-                              : `${requirementSummary.metCount}/${requirementSummary.totalCount} requirements`}
-                          </div>
+                          {showRequirements && (
+                            <div
+                              className={`mt-1 text-xs ${
+                                sectionCompleted
+                                  ? "text-emerald-600"
+                                  : isCurrentSection
+                                  ? "text-indigo-600"
+                                  : "text-slate-500"
+                              }`}
+                            >
+                              {sectionCompleted
+                                ? "All requirements met"
+                                : `${requirementSummary.metCount}/${requirementSummary.totalCount} requirements`}
+                            </div>
+                          )}
 
                         </div>
 
@@ -19142,7 +19170,7 @@ export function SubjectLearningInterface({
                                     <>
                                     
 
-                                  {!hasAvailableQuizzes && !isFirstSectionOfFirstModule && (
+                                  {allowAiAdaptiveQuiz && (
                                   
                                   <button
                                     onClick={() => moduleAccessible && handleStartAdaptiveQuiz(section)}
@@ -19229,32 +19257,33 @@ export function SubjectLearningInterface({
 
                                 {renderExerciseTiles()}
 
-                                {!shouldHideGenerationButtons && (
-                                  <>
+                                {allowAiExercise && !hasAdminSectionExercise && (
+                                  <button
+                                    onClick={() => moduleAccessible && handleGenerateExercise(section)}
+                                    disabled={
+                                      generatingExercise[section.id] ||
+                                      !moduleAccessible ||
+                                      exercisesFetchPending
+                                    }
+                                    className="w-full rounded-lg px-3 py-2 text-sm flex items-center gap-2 transition bg-gradient-to-r from-indigo-500 to-purple-500 text-white hover:from-indigo-600 hover:to-purple-600 disabled:opacity-50 disabled:cursor-not-allowed mt-2"
+                                  >
                                     {exercisesFetchPending ? (
-                                     ""
+                                      <>
+                                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                        <span>Loading exercises...</span>
+                                      </>
+                                    ) : generatingExercise[section.id] ? (
+                                      <>
+                                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                        <span>Generating...</span>
+                                      </>
                                     ) : (
-                                      !hasAdminSectionExercise && (
-                                        <button
-                                          onClick={() => moduleAccessible && handleGenerateExercise(section)}
-                                          disabled={generatingExercise[section.id] || !moduleAccessible}
-                                          className="w-full rounded-lg px-3 py-2 text-sm flex items-center gap-2 transition bg-gradient-to-r from-indigo-500 to-purple-500 text-white hover:from-indigo-600 hover:to-purple-600 disabled:opacity-50 disabled:cursor-not-allowed mt-2"
-                                        >
-                                          {generatingExercise[section.id] ? (
-                                            <>
-                                              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                                              <span>Generating...</span>
-                                            </>
-                                          ) : (
-                                            <>
-                                              <Code className="h-4 w-4" />
-                                              <span>Generate AI Case Study</span>
-                                            </>
-                                          )}
-                                        </button>
-                                      )
+                                      <>
+                                        <Code className="h-4 w-4" />
+                                        <span>Generate AI Case Study</span>
+                                      </>
                                     )}
-                                  </>
+                                  </button>
                                 )}
                               </>
                             );
