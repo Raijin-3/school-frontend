@@ -19,12 +19,13 @@ async function getAuthHeaders() {
 
 export async function GET(
   _request: NextRequest,
-  { params }: { params: { subjectId: string } }
+  { params }: { params: Promise<{ subjectId: string }> }
 ) {
   try {
     const headers = await getAuthHeaders()
+    const { subjectId } = await params
     const response = await fetch(
-      `${API_BASE_URL}/v1/teacher/subjects/${params.subjectId}/modules`,
+      `${API_BASE_URL}/v1/teacher/subjects/${subjectId}/modules`,
       { headers }
     )
 

@@ -28,6 +28,7 @@ export function LessonWizard() {
           subject_id: selection.subjectId,
           module_id: selection.moduleId,
           section_id: selection.sectionId,
+          due_at: selection.dueAt ?? null,
           trigger_type: "manual",
           trigger_config: tools,
         }),

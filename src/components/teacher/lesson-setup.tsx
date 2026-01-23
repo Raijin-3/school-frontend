@@ -41,6 +41,7 @@ export type LessonSetupSelection = {
   subjectId: string
   moduleId: string
   sectionId: string
+  dueAt?: string | null
 }
 
 type LessonSetupWizardProps = {
@@ -56,6 +57,7 @@ export function LessonSetupWizard({ onContinue }: LessonSetupWizardProps) {
   const [subjectId, setSubjectId] = useState<string>("")
   const [moduleId, setModuleId] = useState<string>("")
   const [sectionId, setSectionId] = useState<string>("")
+  const [dueAt, setDueAt] = useState<string>("")
 
   const isComplete = Boolean(classId && subjectId && moduleId && sectionId)
 
@@ -267,6 +269,17 @@ export function LessonSetupWizard({ onContinue }: LessonSetupWizardProps) {
               </SelectContent>
             </Select>
           </div>
+
+          <div className="space-y-2">
+            <Label className="text-sm font-semibold text-slate-700">Due date</Label>
+            <input
+              type="date"
+              value={dueAt}
+              onChange={(event) => setDueAt(event.target.value)}
+              className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 shadow-xs focus:border-slate-300 focus:outline-none"
+            />
+            <p className="text-xs text-slate-500">Optional. Leave blank for no due date.</p>
+          </div>
         </div>
       </div>
 
@@ -288,7 +301,7 @@ export function LessonSetupWizard({ onContinue }: LessonSetupWizardProps) {
           disabled={!isComplete}
           onClick={() => {
             if (isComplete) {
-              onContinue?.({ classId, subjectId, moduleId, sectionId })
+              onContinue?.({ classId, subjectId, moduleId, sectionId, dueAt: dueAt || null })
             }
           }}
         >
