@@ -16783,6 +16783,23 @@ export function SubjectLearningInterface({
                 {question.text || question.question_text}
               </p>
             )}
+            {questionAnswer ? (
+              <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+                <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+                  Answer (temporary)
+                </div>
+                {questionAnswerHtml ? (
+                  <div
+                    className="mt-2 text-sm leading-relaxed text-emerald-900 prose prose-sm prose-emerald max-w-none"
+                    dangerouslySetInnerHTML={{ __html: questionAnswerHtml }}
+                  />
+                ) : (
+                  <p className="mt-2 text-sm leading-relaxed text-emerald-900">
+                    {questionAnswer}
+                  </p>
+                )}
+              </div>
+            ) : null}
           </div>
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -16905,7 +16922,7 @@ export function SubjectLearningInterface({
                     </p>
                   </>
                 )}
-                {/* {questionAnswer ? (
+                {questionAnswer ? (
                   <div className="mt-3">
                     <h4 className="text-sm font-semibold text-slate-900">Answer</h4>
                     {questionAnswerHtml ? (
@@ -16919,7 +16936,7 @@ export function SubjectLearningInterface({
                       </p>
                     )}
                   </div>
-                ) : null} */}
+                ) : null}
                 
               </div>
               {questionDifficulty && (
