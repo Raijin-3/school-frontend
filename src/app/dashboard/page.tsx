@@ -12,7 +12,15 @@ import { DashboardHero, DashboardSummaryProvider } from "./dashboard-hero"
 type DashboardData = {
   role?: string
   user: { id: string; displayName: string }
-  stats?: { xp: number; streakDays: number; tier: "Bronze" | "Silver" | "Gold" | "Platinum" }
+  stats?: {
+    xp: number
+    streakDays: number
+    tier: "Bronze" | "Silver" | "Gold" | "Platinum"
+    currentStreak?: number
+    longestStreak?: number
+    level?: number
+    levelProgressPercent?: number
+  }
   weeklyXp?: { week: string; XP: number }[]
   completion?: { name: string; value: number }[]
   nextActions?: { label: string; href: string }[]

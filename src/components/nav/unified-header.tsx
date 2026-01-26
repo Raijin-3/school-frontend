@@ -56,6 +56,14 @@ const userNavItems: NavItem[] = [
   // Navigation items removed as requested
 ]
 
+const parentNavItems: NavItem[] = [
+  {
+    href: "/parent-dashboard",
+    label: "Parent dashboard",
+    icon: <LayoutDashboard className="h-4 w-4" />,
+  },
+]
+
 export function UnifiedHeader({ user: initialUser, userProfile: initialUserProfile }: Props) {
   const supabase = useMemo(() => supabaseBrowser(), [])
   const [mounted, setMounted] = useState(false)
@@ -122,8 +130,15 @@ export function UnifiedHeader({ user: initialUser, userProfile: initialUserProfi
   const initial = displayName.charAt(0).toUpperCase()
   const isAuthenticated = Boolean(user)
 
-  const navItems = isAuthenticated ? userNavItems : publicNavItems
-  const hideLogoForOnboarding = isAuthenticated && userProfile?.onboarding_completed === false
+  const isParent = userProfile?.role === "parent"
+  const hideLogoForOnboarding =
+    isAuthenticated && !isParent && userProfile?.onboarding_completed === false
+  const navItems = isAuthenticated
+    ? isParent
+      ? parentNavItems
+      : userNavItems
+    : publicNavItems
+  const logoHref = isParent ? "/parent-dashboard" : isAuthenticated ? "/dashboard" : "/"
 
   if (!mounted) {
     return (
@@ -156,7 +171,7 @@ export function UnifiedHeader({ user: initialUser, userProfile: initialUserProfi
           {/* Logo */}
           {!hideLogoForOnboarding && (
             <Link
-              href={isAuthenticated ? "/dashboard" : "/"}
+              href={logoHref}
               className="flex items-center gap-3 hover:opacity-90 transition-opacity"
             >
               <div className="p-2 rounded-xl bg-gradient-to-r from-indigo-600 via-purple-600 to-emerald-600 shadow-lg hover:shadow-xl transition-shadow">
@@ -203,18 +218,19 @@ export function UnifiedHeader({ user: initialUser, userProfile: initialUserProfi
 
           {/* Right Side */}
           <div className="flex items-center gap-4">
-            {isAuthenticated && user ? (
-              <AuthenticatedNav
-                user={user}
-                userProfile={userProfile}
-                displayName={displayName}
-                avatarUrl={avatarUrl}
-                initial={initial}
-                onLogout={handleLogout}
-              />
-            ) : (
-              <PublicNav />
-            )}
+          {isAuthenticated && user ? (
+            <AuthenticatedNav
+              user={user}
+              userProfile={userProfile}
+              displayName={displayName}
+              avatarUrl={avatarUrl}
+              initial={initial}
+              isParent={isParent}
+              onLogout={handleLogout}
+            />
+          ) : (
+            <PublicNav />
+          )}
 
           </div>
         </div>
@@ -229,6 +245,7 @@ function AuthenticatedNav({
   displayName,
   avatarUrl,
   initial,
+  isParent,
   onLogout
 }: {
   user: User
@@ -236,6 +253,7 @@ function AuthenticatedNav({
   displayName: string
   avatarUrl: string | null
   initial: string
+  isParent: boolean
   onLogout: () => void
 }) {
   const sampleNotifs = [
@@ -257,6 +275,7 @@ function AuthenticatedNav({
   return (
     <>
       {/* User Stats - Hidden on mobile */}
+      {!isParent && (
       <div className="hidden xl:flex items-center gap-4">
         {typeof userProfile?.xp === "number" && (
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-gradient-to-r from-yellow-100 to-orange-100 border border-yellow-200">
@@ -271,18 +290,21 @@ function AuthenticatedNav({
         )}
         <LevelStatus userProfile={userProfile} />
       </div>
+      )}
 
       {/* Compact XP / Level summary for smaller screens */}
-      <div className="flex flex-col items-end gap-0.5 text-right text-[11px] text-gray-600 xl:hidden min-w-[88px]">
-        <span className="text-sm font-semibold text-yellow-700">{xpLabel} XP</span>
-        <span className="text-[10px] uppercase tracking-[0.25em] text-gray-500">Level {derivedLevel}</span>
-        <div className="h-1.5 w-20 overflow-hidden rounded-full bg-gray-200">
-          <div
-            className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all duration-300"
-            style={{ width: `${mobileProgressPercent}%` }}
-          />
+      {!isParent && (
+        <div className="flex flex-col items-end gap-0.5 text-right text-[11px] text-gray-600 xl:hidden min-w-[88px]">
+          <span className="text-sm font-semibold text-yellow-700">{xpLabel} XP</span>
+          <span className="text-[10px] uppercase tracking-[0.25em] text-gray-500">Level {derivedLevel}</span>
+          <div className="h-1.5 w-20 overflow-hidden rounded-full bg-gray-200">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all duration-300"
+              style={{ width: `${mobileProgressPercent}%` }}
+            />
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Notifications */}
       <DropdownMenu>
@@ -367,20 +389,39 @@ function AuthenticatedNav({
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuGroup>
+          {isParent && (
             <DropdownMenuItem asChild>
-              <Link href="/profile" className="flex items-center cursor-pointer">
-                <User className="mr-2 h-4 w-4" />
-                <span>Profile</span>
+              <Link href="/parent-dashboard" className="flex items-center cursor-pointer">
+                <LayoutDashboard className="mr-2 h-4 w-4" />
+                <span>Dashboard</span>
               </Link>
             </DropdownMenuItem>
-            <DropdownMenuItem asChild>
-              <Link href="/settings" className="flex items-center cursor-pointer">
-                <Settings className="mr-2 h-4 w-4" />
-                <span>Settings</span>
-              </Link>
-            </DropdownMenuItem>
-          </DropdownMenuGroup>
-          <DropdownMenuSeparator />
+          )}
+          {!isParent && (
+            <>
+              <DropdownMenuItem asChild>
+                <Link href="/dashboard" className="flex items-center cursor-pointer">
+                  <Home className="mr-2 h-4 w-4" />
+                  <span>Dashboard</span>
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href="/profile" className="flex items-center cursor-pointer">
+                  <User className="mr-2 h-4 w-4" />
+                  <span>Profile</span>
+                </Link>
+              </DropdownMenuItem>
+            </>
+          )}
+          <DropdownMenuItem asChild>
+            <Link href="/settings" className="flex items-center cursor-pointer">
+              <Settings className="mr-2 h-4 w-4" />
+              <span>Settings</span>
+            </Link>
+          </DropdownMenuItem>
+          
+        </DropdownMenuGroup>
+        <DropdownMenuSeparator />
           <DropdownMenuItem 
             className="text-red-600 focus:text-red-600 focus:bg-red-50 cursor-pointer"
             onClick={onLogout}

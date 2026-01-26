@@ -12,6 +12,26 @@ export default function MyChildPage() {
   const { childData } = useParentDashboardContext()
   const { profile, classDetails, focusAreas, strengths, teacherList, communications, attendance } = childData
   const attendanceLog = attendance.log
+  const classLabel = [classDetails.className, classDetails.sectionLabel].filter(Boolean).join(" • ")
+  const classTeacherName = classDetails.advisor ?? profile.teacher ?? "Teacher not assigned yet"
+  const enrolledSubjects =
+    classDetails.subjects?.length
+      ? classDetails.subjects.map((subject, index) => ({
+          id:
+            subject.id ??
+            subject.title ??
+            `${subject.teacher ?? "subject"}-${index}`,
+          title: subject.title ?? "Subject",
+          topic: subject.topic,
+          teacher: subject.teacher ?? classTeacherName,
+          completion: subject.completion,
+        }))
+      : childData.todaySubjects.map((subject) => ({
+          id: subject.name,
+          title: subject.name,
+          topic: subject.topic ?? subject.status,
+          teacher: subject.teacher ?? classTeacherName,
+        }))
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -38,15 +58,18 @@ export default function MyChildPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">Basic details</p>
-                <h2 className="text-xl font-bold text-slate-900">{profile.grade}</h2>
+                <h2 className="text-xl font-bold text-slate-900">{classLabel || profile.grade}</h2>
               </div>
               <div className="rounded-full border border-slate-200 px-3 py-1 text-xs text-slate-600">{profile.overall}</div>
             </div>
             <dl className="mt-4 space-y-3 text-sm text-slate-600">
-              <DetailRow label="Roll" value={profile.roll} />
-              <DetailRow label="Date of birth" value="15 Sep 2014" />
-              <DetailRow label="Bus route" value="Route 12 • Sarita Vihar" />
-              <DetailRow label="Emergency" value="Mrs. Mehta • +91 98100 12345" />
+              <DetailRow label="Name" value={profile.name} />
+              <DetailRow label="Roll" value={profile.roll ?? "Pending"} />
+              <DetailRow
+                label="Class & section"
+                value={classLabel || "Waiting for section assignment"}
+              />
+              <DetailRow label="Homeroom teacher" value={classTeacherName} />
             </dl>
             <div className="mt-5 rounded-2xl border border-slate-100 bg-slate-50/80 p-4 text-xs text-slate-500">
               Focus
@@ -57,16 +80,43 @@ export default function MyChildPage() {
           <article className="rounded-3xl border border-white/70 bg-white/90 p-5 shadow-lg shadow-slate-200/60">
             <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
               <CalendarDays className="h-4 w-4 text-indigo-600" />
-              Class & section
+              Enrolled subjects
             </div>
             <div className="mt-4 space-y-3 text-sm text-slate-600">
-              {classDetails.schedule.map((lesson) => (
-                <div key={lesson.subject} className="flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50/80 px-3 py-2">
-                  <p className="font-semibold text-slate-800">{lesson.subject}</p>
-                  <span className="text-xs text-slate-500">{lesson.time}</span>
+              {enrolledSubjects.map((subject) => (
+                <div key={subject.id} className="rounded-2xl border border-slate-100 bg-slate-50/80 px-3 py-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="font-semibold text-slate-800">{subject.title}</p>
+                      <p className="text-xs text-slate-500">
+                        {subject.teacher}
+                      </p>
+                    </div>
+                    {typeof subject.completion === "number" ? (
+                      <span className="text-xs text-emerald-600">{subject.completion}% complete</span>
+                    ) : (
+                      <span className="text-xs text-slate-500">{subject.topic ? "Live topic" : "Awaiting topic"}</span>
+                    )}
+                  </div>
+                  {subject.topic && (
+                    <p className="mt-2 text-xs text-slate-500">Topic: {subject.topic}</p>
+                  )}
                 </div>
               ))}
             </div>
+            {classDetails.schedule.length > 0 && (
+              <div className="mt-5 rounded-2xl border border-slate-100 bg-white/80 p-3 text-xs text-slate-500">
+                <p className="font-semibold text-slate-700">Today&apos;s schedule</p>
+                <div className="mt-2 flex flex-col gap-2">
+                  {classDetails.schedule.map((lesson) => (
+                    <div key={lesson.subject} className="flex items-center justify-between text-xs">
+                      <span>{lesson.subject}</span>
+                      <span className="text-slate-400">{lesson.time}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             <p className="mt-5 text-xs text-slate-500">{classDetails.sectionNotes}</p>
           </article>
 
@@ -74,15 +124,16 @@ export default function MyChildPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">Class teacher info</p>
-                <h2 className="text-lg font-bold text-slate-900">{classDetails.advisor}</h2>
+                <h2 className="text-lg font-bold text-slate-900">{classTeacherName}</h2>
+                <p className="text-xs text-slate-500">{classDetails.academicYear ?? "Class advisor"}</p>
               </div>
               <div className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
                 Responds within 12h
               </div>
             </div>
             <div className="mt-4 space-y-3 text-sm text-slate-600">
-              <DetailRow label="Email" value={classDetails.advisorEmail} />
-              <DetailRow label="Phone" value={classDetails.advisorPhone} />
+              <DetailRow label="Email" value={classDetails.advisorEmail ?? "Not shared yet"} />
+              <DetailRow label="Phone" value={classDetails.advisorPhone ?? "Not shared yet"} />
             </div>
             <div className="mt-5 flex items-center gap-2 text-xs font-semibold text-indigo-600">
               <MessageCircle className="h-4 w-4" />
@@ -90,6 +141,7 @@ export default function MyChildPage() {
             </div>
           </article>
         </section>
+
 
         <section className="rounded-3xl border border-white/70 bg-white/90 p-6 shadow-xl shadow-slate-200/60">
           <div className="flex items-center justify-between">
