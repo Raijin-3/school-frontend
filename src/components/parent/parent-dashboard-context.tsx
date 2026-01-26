@@ -1,7 +1,7 @@
 "use client"
 
 import { BellRing, BookOpen, CalendarDays, MessageSquare, Star } from "lucide-react"
-import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from "react"
+import { createContext, ReactNode, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 
 type StatusColor = "Present" | "Absent" | "Holiday" | "Weekend"
 
@@ -12,6 +12,13 @@ export type ChildMetric = {
   topics: { topic: string; completed: number; total: number; confidence: string }[]
   tests: { name: string; score: string; percentile: string; trend: string }[]
   assignments: { title: string; status: string; detail: string; score: string }[]
+  modules?: {
+    id: string
+    title: string
+    completion?: number | null
+    status?: string | null
+    orderIndex?: number | null
+  }[]
 }
 
 export type ChildAttendance = {
@@ -57,7 +64,7 @@ export type ChildData = {
     lastLogin: string
     overall: string
   }
-  todaySubjects: { name: string; teacher: string; status: string; mood: string }[]
+  todaySubjects: { name: string; teacher: string; status: string; mood: string; topic?: string }[]
   alerts: { title: string; detail: string; time: string }[]
   classDetails: {
     advisor: string
@@ -65,6 +72,9 @@ export type ChildData = {
     advisorPhone: string
     schedule: { subject: string; time: string }[]
     sectionNotes: string
+    className?: string
+    sectionLabel?: string
+    subjects?: { id: string; title: string }[]
   }
   focusAreas: string[]
   subjectDetails: ChildMetric[]
@@ -89,11 +99,138 @@ export type ParentProfile = {
   role?: string | null
 }
 
+type ParentChildClassDetails = {
+  class_id: string
+  class_name?: string | null
+  grade_level?: string | null
+  section_label?: string | null
+  academic_year?: string | null
+  class_teacher?: string | null
+  subjects?: ClassSubjectInfo[]
+}
+
+type ParentChildProfile = {
+  id: string | number
+  full_name?: string | null
+  education?: string | null
+  current_institute?: string | null
+  focus_areas?: unknown
+  domain?: string | null
+  profession?: string | null
+  class_details?: ParentChildClassDetails | null
+}
+
+type ClassSubjectModule = {
+  id: string
+  title?: string | null
+  orderIndex?: number | null
+  completion?: number | null
+  progress?: number | null
+  status?: string | null
+}
+
+type ClassSubjectInfo = {
+  id: string
+  title: string
+  teacher?: string | null
+  topic?: string | null
+  completion?: number | null
+  modules?: ClassSubjectModule[]
+}
+
+type ParentChildOption = {
+  id: string
+  name: string
+  grade: string
+  remarks: string
+}
+
+function normalizeChildId(value: string | number | undefined | null): string | undefined {
+  if (value === undefined || value === null) {
+    return undefined
+  }
+  const normalized = String(value).trim()
+  return normalized ? normalized : undefined
+}
+
+function formatFocusArea(value: unknown): string | undefined {
+  if (typeof value === "string") {
+    const trimmed = value.trim()
+    if (trimmed) return trimmed
+  }
+  if (Array.isArray(value)) {
+    const parts = value
+      .map((item) => (typeof item === "string" ? item.trim() : ""))
+      .filter(Boolean)
+    if (parts.length) {
+      return parts.join(", ")
+    }
+  }
+  return undefined
+}
+
+
+function deriveChildGrade(profile: ParentChildProfile) {
+  return (
+    profile.class_details?.grade_level ??
+    profile.class_details?.class_name ??
+    profile.education ??
+    profile.current_institute ??
+    profile.domain ??
+    profile.profession ??
+    "Student"
+  )
+}
+
+function deriveChildRemarks(profile: ParentChildProfile) {
+  return (
+    profile.class_details?.class_teacher ??
+    formatFocusArea(profile.focus_areas) ??
+    profile.domain ??
+    profile.profession ??
+    "Focus updates coming soon"
+  )
+}
+
+function createChildOption(profile: ParentChildProfile): ParentChildOption {
+  const childId = normalizeChildId(profile.id) ?? String(profile.id ?? "")
+  return {
+    id: childId,
+    name: profile.full_name?.trim() || "Student",
+    grade: deriveChildGrade(profile),
+    remarks: deriveChildRemarks(profile),
+  }
+}
+
+function buildTodaySubjectsFromClass(
+  subjects: ClassSubjectInfo[] | undefined,
+  classTeacher?: string | null,
+  defaultTeacher?: string,
+  fallback?: ChildData['todaySubjects'],
+): ChildData['todaySubjects'] {
+  if (!subjects?.length) {
+    return fallback ?? []
+  }
+  return subjects.map((subject) => {
+    const topic = subject.topic?.trim()
+    const teacher = subject.teacher ?? classTeacher ?? defaultTeacher ?? "Teacher not assigned"
+    const status = topic ? "Topic running" : "Topic pending"
+    const mood = topic ? `Current topic: ${topic}` : "Topic pending update"
+    return {
+      name: subject.title,
+      teacher,
+      status,
+      mood,
+      topic: topic ?? undefined,
+    }
+  })
+}
+
 const childPortfolio: ChildData[] = [
   {
     id: "aarav",
     profile: {
-      name: "Aarav Mehta",
+      name: "Sample learner",
       grade: "Grade 9 • Section B",
       roll: "Roll No. 27",
       teacher: "Ms. Revathi Rao",
@@ -116,12 +253,19 @@ const childPortfolio: ChildData[] = [
       advisor: "Ms. Revathi Rao",
       advisorEmail: "revathi.rao@school.edu",
       advisorPhone: "+91 88000 33444",
+      className: "Grade 9",
+      sectionLabel: "Section B",
+      subjects: [
+        { id: "math", title: "Mathematics" },
+        { id: "science", title: "Science" },
+        { id: "english", title: "English" },
+      ],
       schedule: [
         { subject: "Mathematics", time: "08:30 - 09:20" },
         { subject: "Science", time: "09:30 - 10:20" },
         { subject: "English", time: "10:30 - 11:20" },
       ],
-      sectionNotes: "Group project presentation on Friday. Aarav is doing peer reviews for his group.",
+      sectionNotes: "Group project presentation on Friday; the learner is coordinating peer reviews for the group.",
     },
     focusAreas: [
       "Developing faster fluency with rational number operations",
@@ -166,13 +310,23 @@ const childPortfolio: ChildData[] = [
       { label: "Timed writing", detail: "Needs practice summarizing observations under time pressure." },
     ],
     teacherRemarks: [
-      { author: "Ms. Revathi Rao", role: "Class teacher", time: "Jan 10 • 06:20 PM", remark: "Aarav leads the reflection circle and shares useful links for peers." },
+      {
+        author: "Ms. Revathi Rao",
+        role: "Class teacher",
+        time: "Jan 10 • 06:20 PM",
+        remark: "The learner leads the reflection circle and shares helpful links for peers.",
+      },
     ],
     teacherList: [
-      { name: "Ms. Revathi Rao", subject: "Class teacher • English", status: "Responds within 12h", message: "Shared weekly reflection report." },
+      {
+        name: "Ms. Revathi Rao",
+        subject: "Class teacher • English",
+        status: "Responds within 12h",
+        message: "Shared weekly reflection report.",
+      },
     ],
     communications: [
-      { title: "Ms. Revathi Rao", detail: "Praise: Aarav leads reflection circle.", time: "Yesterday • 05:50 PM", icon: Star },
+      { title: "Ms. Revathi Rao", detail: "Praise: the learner led the reflection circle.", time: "Yesterday • 05:50 PM", icon: Star },
     ],
     notifications: {
       examUpdates: [
@@ -212,7 +366,7 @@ const childPortfolio: ChildData[] = [
         { date: "Jan 10", status: "Present", note: "Participated in math challenge" },
       ],
       trendHighlights: [
-        "96% monthly attendance keeps Aarav top 12% of the cohort.",
+        "96% monthly attendance keeps this learner in the top 12% of the cohort.",
         "Daily arrival time averages 08:28 AM, beating the punctuality goal.",
       ],
       calendarOverrides: {
@@ -225,7 +379,7 @@ const childPortfolio: ChildData[] = [
   {
     id: "nisha",
     profile: {
-      name: "Nisha Mehta",
+      name: "Learner sample",
       grade: "Grade 7 • Section A",
       roll: "Roll No. 12",
       teacher: "Mr. Dev Sharma",
@@ -247,11 +401,18 @@ const childPortfolio: ChildData[] = [
       advisor: "Mr. Dev Sharma",
       advisorEmail: "dev.sharma@school.edu",
       advisorPhone: "+91 88000 55667",
+      className: "Grade 7",
+      sectionLabel: "Section A",
+      subjects: [
+        { id: "science", title: "Science" },
+        { id: "math", title: "Mathematics" },
+        { id: "art", title: "Art" },
+      ],
       schedule: [
         { subject: "Science", time: "08:30 - 09:20" },
         { subject: "Math", time: "09:30 - 10:20" },
       ],
-      sectionNotes: "Nisha mentors the Science crew; remind to sync with Art pairings.",
+      sectionNotes: "This learner mentors the Science crew; remind to sync with Art pairings.",
     },
     focusAreas: ["Documenting labs nightly", "Timed reasoning drills"],
     subjectDetails: [
@@ -282,7 +443,7 @@ const childPortfolio: ChildData[] = [
       { name: "Ms. Pooja Iyer", subject: "Science", status: "Shared extra reading", message: "Check the biodiversity article he recommended." },
     ],
     communications: [
-      { title: "Ms. Pooja Iyer", detail: "Appreciated Nisha for lab curiosity.", time: "Today • 06:20 PM", icon: MessageSquare },
+      { title: "Ms. Pooja Iyer", detail: "Appreciated this learner for lab curiosity.", time: "Today • 06:20 PM", icon: MessageSquare },
     ],
     notifications: {
       examUpdates: [
@@ -329,32 +490,171 @@ const ParentDashboardContext = createContext<
 >(undefined)
 
 export function ParentDashboardProvider({ children }: { children: ReactNode }) {
-  const [selectedChildId, setSelectedChildId] = useState(childPortfolio[0].id)
-  const [parentProfile, setParentProfile] = useState<ParentProfile | null>(null)
-  useEffect(() => {
-    const stored = window.localStorage.getItem("selected-parent-child")
-    if (stored && childPortfolio.some((child) => child.id === stored)) {
-      setSelectedChildId(stored)
-    }
-  }, [])
-  const childData = useMemo(
-    () => childPortfolio.find((item) => item.id === selectedChildId) ?? childPortfolio[0],
-    [selectedChildId],
-  )
-  const childOptions = useMemo(
+  const demoChildOptions = useMemo(
     () =>
       childPortfolio.map((child) => ({
-        id: child.id,
+        id: normalizeChildId(child.id) ?? child.id,
         name: child.profile.name,
         grade: child.profile.grade,
         remarks: child.profile.focus,
       })),
     [],
   )
+  const [selectedChildId, setSelectedChildId] = useState(() => {
+    const fallback = demoChildOptions[0]?.id ?? childPortfolio[0].id
+    if (typeof window === "undefined") {
+      return fallback
+    }
+    return window.localStorage.getItem("selected-parent-child") ?? fallback
+  })
+  const [parentChildren, setParentChildren] = useState<ParentChildProfile[]>([])
+  const [parentProfile, setParentProfile] = useState<ParentProfile | null>(null)
+  const childOptions = useMemo(
+    () =>
+      parentChildren.length > 0
+        ? parentChildren.map(createChildOption)
+        : demoChildOptions,
+    [parentChildren, demoChildOptions],
+  )
+  const childData = useMemo(() => {
+    const template = childPortfolio.find((item) => item.id === selectedChildId) ?? childPortfolio[0]
+    const matchingChild = parentChildren.find(
+      (child) => normalizeChildId(child.id) === selectedChildId,
+    )
+    if (!matchingChild) {
+      return template
+    }
+    const classInfo = matchingChild.class_details
+    const templateSubjectDetails = template.subjectDetails
+    const subjectMetrics =
+      classInfo?.subjects?.map((subject, index) => {
+        const fallback = templateSubjectDetails[index] ?? templateSubjectDetails[0]
+        const modules = subject.modules?.map((module) => ({
+          id: module.id,
+          title: module.title ?? module.id,
+          completion: module.completion ?? null,
+          progress: module.progress ?? module.completion ?? null,
+          status: module.status ?? null,
+          orderIndex: module.orderIndex ?? (module as any).order_index ?? null,
+        }))
+        return {
+          subject: subject.title ?? fallback.subject,
+          completion: subject.completion ?? fallback.completion,
+          focus: subject.topic ?? fallback.focus,
+          topics: fallback.topics,
+          tests: fallback.tests,
+          assignments: fallback.assignments,
+          modules,
+        }
+      }) ?? []
+    const mergedSubjectDetails =
+      subjectMetrics.length > 0 ? subjectMetrics : templateSubjectDetails
+    return {
+      ...template,
+      profile: {
+        ...template.profile,
+        name: matchingChild.full_name ?? template.profile.name,
+        grade: classInfo?.grade_level ?? template.profile.grade,
+        teacher: classInfo?.class_teacher ?? template.profile.teacher,
+      },
+      classDetails: {
+        ...template.classDetails,
+        className: classInfo?.class_name ?? template.classDetails.className,
+        sectionLabel: classInfo?.section_label ?? template.classDetails.sectionLabel,
+        advisor: classInfo?.class_teacher ?? template.classDetails.advisor,
+        subjects: classInfo?.subjects ?? template.classDetails.subjects,
+      },
+      todaySubjects: buildTodaySubjectsFromClass(
+        classInfo?.subjects ?? template.classDetails.subjects,
+        classInfo?.class_teacher,
+        template.profile.teacher,
+        template.todaySubjects,
+      ),
+      subjectDetails: mergedSubjectDetails,
+    }
+  }, [selectedChildId, parentChildren])
+
+  const hasSyncedSelection = useRef(false)
+
+  useLayoutEffect(() => {
+    if (parentChildren.length === 0) return
+    hasSyncedSelection.current = false
+  }, [parentChildren.length])
+
+  useLayoutEffect(() => {
+    if (hasSyncedSelection.current || childOptions.length === 0) return
+    const stored = window.localStorage.getItem("selected-parent-child")
+    if (stored && childOptions.some((child) => child.id === stored)) {
+      if (stored !== selectedChildId) {
+        setSelectedChildId(stored)
+      }
+      hasSyncedSelection.current = true
+      return
+    }
+    if (!childOptions.some((child) => child.id === selectedChildId)) {
+      setSelectedChildId(childOptions[0].id)
+    }
+    hasSyncedSelection.current = true
+  }, [childOptions, selectedChildId])
 
   useEffect(() => {
+    if (
+      childOptions.length > 0 &&
+      !childOptions.some((child) => child.id === selectedChildId)
+    ) {
+      setSelectedChildId(childOptions[0].id)
+    }
+  }, [childOptions, selectedChildId])
+
+  useEffect(() => {
+    if (!selectedChildId) return
     window.localStorage.setItem("selected-parent-child", selectedChildId)
   }, [selectedChildId])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    const loadChildren = async () => {
+      try {
+        const res = await fetch("/api/parent/children", {
+          cache: "no-store",
+          signal: controller.signal,
+        })
+        if (!res.ok) {
+          if (res.status === 404) {
+            console.warn("Parent children endpoint not found yet; falling back to demo data.")
+            return
+          }
+          const text = await res.text().catch(() => res.statusText)
+          throw new Error(text || "Failed to fetch children")
+        }
+        const payload = await res.json()
+        const rawChildren = Array.isArray(payload?.children)
+          ? payload.children
+          : Array.isArray(payload)
+            ? payload
+            : []
+        const normalized = rawChildren
+          .filter((child): child is ParentChildProfile => Boolean(child?.id))
+          .map((child) => ({
+            ...child,
+            class_details:
+              child.class_details && typeof child.class_details === "object"
+                ? child.class_details
+                : null,
+          }))
+        if (!controller.signal.aborted) {
+          setParentChildren(normalized)
+        }
+      } catch (error: unknown) {
+        if ((error as any)?.name !== "AbortError") {
+          console.error("Failed to load parent children:", error)
+        }
+      }
+    }
+
+    loadChildren()
+    return () => controller.abort()
+  }, [])
 
   useEffect(() => {
     const controller = new AbortController()

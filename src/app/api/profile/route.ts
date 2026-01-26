@@ -1,44 +1,8 @@
 import { NextResponse } from "next/server";
-import { createServerClient } from "@supabase/ssr";
-import { cookies } from "next/headers";
+import { getBearerTokenFromRequest } from "@/lib/server/supabase-session";
 
 // Prefer server-only API_URL, then public override; default to localhost:8080 to avoid nulls in dev
 const API_URL = process.env.API_URL;
-
-async function getSupabaseFromRoute() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!supabaseUrl || !supabaseAnonKey) throw new Error("Missing Supabase env vars");
-
-  const cookieStore = await cookies();
-  return createServerClient(supabaseUrl, supabaseAnonKey, {
-    cookies: {
-      getAll() {
-        return cookieStore.getAll();
-      },
-      setAll(cookiesToSet) {
-        try {
-          cookiesToSet.forEach(({ name, value, options }) => cookieStore.set(name, value, options));
-        } catch {}
-      },
-    },
-  });
-}
-
-async function getBearerToken(req: Request): Promise<string | null> {
-  const auth = req.headers.get("authorization") || req.headers.get("Authorization");
-  if (auth && auth.toLowerCase().startsWith("bearer ")) {
-    const token = auth.slice(7).trim();
-    if (token) return token;
-  }
-  try {
-    const supabase = await getSupabaseFromRoute();
-    const { data: { session } } = await supabase.auth.getSession();
-    return session?.access_token ?? null;
-  } catch {
-    return null;
-  }
-}
 
 export async function PUT(req: Request) {
   try {
@@ -47,7 +11,7 @@ export async function PUT(req: Request) {
     // console.log(body);
     
     // Prefer Authorization header token, fallback to Supabase session via cookies
-    const token = await getBearerToken(req);
+    const token = await getBearerTokenFromRequest(req);
     
     if (!token) {
       return NextResponse.json({ error: "No auth token" }, { status: 401 });
@@ -79,7 +43,7 @@ export async function PUT(req: Request) {
 export async function GET(req: Request) {
   try {
     // Prefer Authorization header token, fallback to Supabase session via cookies
-    const token = await getBearerToken(req);
+    const token = await getBearerTokenFromRequest(req);
     
     if (!token) {
       return NextResponse.json({ error: "No auth token" }, { status: 401 });
