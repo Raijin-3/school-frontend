@@ -21,9 +21,9 @@ const cards = [
     accent: "from-emerald-500 to-lime-500",
   },
   {
-    title: "Performance & Insights",
-    description: "Monitor mastery, risks, and AI usage.",
-    href: "/teacher/insights",
+    title: "Class Insight",
+    description: "See class mastery, AI engagement, and suggested actions in one view.",
+    href: "/teacher/class-insight",
     icon: "chart",
     accent: "from-amber-500 to-rose-500",
   },
