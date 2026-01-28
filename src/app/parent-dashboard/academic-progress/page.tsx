@@ -396,7 +396,7 @@ export default function AcademicProgressPage() {
                                     key={exercise.id}
                                     className="rounded-2xl border border-slate-100 bg-white/90 px-3 py-2"
                                   >
-                                    <div className="flex items-center justify-between text-[10px] font-semibold text-slate-500">
+                                    <div className="flex items-center justify-between text-[12px] font-semibold text-slate-500">
                                       <span>{exercise.type ?? "Practice"}</span>
                                       <span>{exercise.difficulty ?? "Level"}</span>
                                     </div>
@@ -404,27 +404,33 @@ export default function AcademicProgressPage() {
                                       {exercise.title}
                                     </p>
                                     {exercise.description ? (
-                                      <p className="text-[11px] text-slate-500">
+                                      <p className="text-[12px] text-slate-500">
                                         {exercise.description}
                                       </p>
                                     ) : null}
                                     {/* <p className="text-[11px] text-slate-500">
                                       {attemptDetailLabel}
                                     </p> */}
-                                    <div className="mt-2 flex items-center justify-between text-[11px] text-slate-500">
+                                    <div className="mt-2 flex items-center justify-between text-[12px] text-slate-500">
                                       <span className="font-semibold text-slate-600">
                                         {displayStatus}
                                       </span>
                                       <span>Attempts {attemptsLabel}</span>
                                     </div>
                                     {scoreLabel ? (
-                                      <p className="text-[10px] text-slate-500">Score: {scoreLabel}</p>
+                                      <p className="text-[12px] text-slate-500">Score: {scoreLabel}</p>
                                     ) : null}
                                     {exercise.latestVerdict ? (
-                                      <p className="text-[10px] font-semibold text-emerald-600">
-                                        {exercise.latestVerdict}
-                                      </p>
-                                    ) : null}
+                                    <p
+                                      className={`text-[11px] font-semibold ${
+                                        exercise.latestVerdict === "Correct"
+                                          ? "text-emerald-600"
+                                          : "text-red-600"
+                                      }`}
+                                    >
+                                      Last Question: {exercise.latestVerdict}
+                                    </p>
+                                  ) : null}
                                   </div>
                                 )
                               })}
