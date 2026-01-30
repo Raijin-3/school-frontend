@@ -524,10 +524,10 @@ export default function ClassInsightShell(props: Props) {
                         </td>
                         <td className="px-4 py-3">
                           <div className="text-2xl font-semibold text-slate-900">{tile.mastery}%</div>
-                          <p className="mt-1 flex items-center gap-1 text-[11px] uppercase tracking-[0.1em] text-slate-500">
+                          {/* <p className="mt-1 flex items-center gap-1 text-[11px] uppercase tracking-[0.1em] text-slate-500">
                             <TrendingUp className="h-3 w-3" aria-hidden="true" />
                             {changeLabel}
-                          </p>
+                          </p> */}
                         </td>
                         <td className="px-4 py-3">
                           <div className="text-sm font-semibold text-slate-900">{tile.struggling}</div>
