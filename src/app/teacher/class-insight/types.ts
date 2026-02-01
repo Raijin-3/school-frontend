@@ -33,12 +33,6 @@ export type MasteryTile = {
   students: ModuleStudentBreakdown[]
   strengthSummary: StrengthSummary
 }
-  strong: number
-  average: number
-  weak: number
-  notStarted: number
-}
-
 export type ModuleStudentSection = {
   section_id: string
   section_title: string
@@ -54,6 +48,7 @@ export type ModuleStudentSection = {
   }[]
   adaptive_status: "Completed" | "In progress"
   exercise_status: "Completed" | "In progress"
+  assigned: boolean
 }
 
 export type AiUsageSegment = {

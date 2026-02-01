@@ -46,9 +46,10 @@ export type LessonSetupSelection = {
 
 type LessonSetupWizardProps = {
   onContinue?: (selection: LessonSetupSelection) => void
+  onContextChange?: (context: { classId: string; subjectId: string } | null) => void
 }
 
-export function LessonSetupWizard({ onContinue }: LessonSetupWizardProps) {
+export function LessonSetupWizard({ onContinue, onContextChange }: LessonSetupWizardProps) {
   const [classes, setClasses] = useState<ClassRow[]>([])
   const [subjects, setSubjects] = useState<SubjectRow[]>([])
   const [modules, setModules] = useState<ModuleRow[]>([])
@@ -155,6 +156,15 @@ export function LessonSetupWizard({ onContinue }: LessonSetupWizardProps) {
 
     loadSections()
   }, [moduleId])
+
+  useEffect(() => {
+    if (!onContextChange) return
+    if (classId && subjectId) {
+      onContextChange({ classId, subjectId })
+    } else {
+      onContextChange(null)
+    }
+  }, [classId, subjectId, onContextChange])
 
   return (
     <div className="rounded-2xl border border-slate-200/80 border-l-4 border-l-slate-900 bg-white p-6 shadow-sm">
