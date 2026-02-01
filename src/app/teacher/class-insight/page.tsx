@@ -170,62 +170,15 @@ type ClassRow = {
 
 
 type SectionInsight = {
-
-
-
-
-
-
-
   section_id: string
-
-
-
-
-
-
-
   section_title: string
-
-
-
-
-
-
-
   adaptive_quiz_percent: number | null
-
-
-
-
-
-
-
   exercise_percent: number | null
-
-
-
-
-
-
-
   overall_average: number | null
-
-
-
-
-
-
-
   student_count: number
-
-
-
-
-
-
-
+  assigned: boolean
 }
+
 
 
 
@@ -326,49 +279,13 @@ type InsightsResponse = {
 
 
   summary: {
-
-
-
     total_hints_used: number
-
-
-
     total_students: number
-
-
-
     adaptive_sessions_completed: number
-
-
-
-
-
-
-
     section_exercises_completed: number
-
-
-
-
-
-
-
     average_score: number | null
-
-
-
-
-
-
-
     sections_tracked: number
-
-
-
-
-
-
-
+    sections_assigned: number
   }
 
 
@@ -474,6 +391,7 @@ const emptyInsights: InsightsResponse = {
 
 
     sections_tracked: 0,
+    sections_assigned: 0,
 
 
 
@@ -1252,70 +1170,31 @@ function buildMasteryTiles(modules: ModuleInsight[], classStudents: StudentInsig
 
 function buildAiSegmentsFromStudents(students: StudentInsight[]): AiUsageSegment[] {
 
+  const studentsWithHints = (students ?? []).filter((student) => (student.hints ?? 0) > 0)
 
+  const segmentTotals = {
+    light: 0,
+    medium: 0,
+    high: 0,
+  }
 
-  const normalizedStudents = students ?? []
-
-
-
-  const light = normalizedStudents.filter((student) => (student.hints ?? 0) <= 2).length
-
-
-
-  const medium = normalizedStudents.filter((student) => {
-
-
-
+  for (const student of studentsWithHints) {
     const hints = student.hints ?? 0
-
-
-
-    return hints >= 3 && hints <= 5
-
-
-
-  }).length
-
-
-
-  const high = normalizedStudents.filter((student) => (student.hints ?? 0) >= 6).length
-
-
-
-
-
-
+    if (hints <= 2) {
+      segmentTotals.light += hints
+    } else if (hints <= 5) {
+      segmentTotals.medium += hints
+    } else {
+      segmentTotals.high += hints
+    }
+  }
 
   return [
-
-
-
-    { label: "Light support", value: light, range: "0-2 hints", tone: "green" },
-
-
-
-    { label: "Medium support", value: medium, range: "3-5 hints", tone: "amber" },
-
-
-
-    { label: "High support", value: high, range: "6+ hints", tone: "rose" },
-
-
-
+    { label: "Light support", value: segmentTotals.light, range: "0-2 hints", tone: "green" },
+    { label: "Medium support", value: segmentTotals.medium, range: "3-5 hints", tone: "amber" },
+    { label: "High support", value: segmentTotals.high, range: "6+ hints", tone: "rose" },
   ]
-
-
-
 }
-
-
-
-
-
-
-
-
-
 
 
 
@@ -2388,7 +2267,7 @@ export default async function ClassInsightPage({
 
   const masteryTiles = buildMasteryTiles(moduleInsights, studentInsights)
 
-
+  const studentsWithHints = studentInsights.filter((student) => (student.hints ?? 0) > 0)
 
   const aiUsage = buildAiSegmentsFromStudents(studentInsights)
 
@@ -2484,9 +2363,7 @@ export default async function ClassInsightPage({
 
 
 
-  const studentAiUsage: StudentAiUsage[] = [...studentInsights]
-
-    .filter((student) => (student.hints ?? 0) > 0)
+  const studentAiUsage: StudentAiUsage[] = [...studentsWithHints]
 
     .sort((a, b) => (b.hints ?? 0) - (a.hints ?? 0))
 
@@ -2718,7 +2595,14 @@ export default async function ClassInsightPage({
 
 
 
-  const jarvisCount = aiUsage.reduce((sum, item) => sum + item.value, 0)
+  quickStats.push({
+    label: "Sections assigned",
+    value: `${insights.summary.sections_assigned ?? 0}`,
+    sublabel: "Assigned sections",
+  })
+
+
+  const jarvisCount = studentsWithHints.length
 
 
 
