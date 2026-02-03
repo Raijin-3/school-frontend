@@ -77,14 +77,15 @@ import type {
 
 
 
+  StrugglingActionType,
+
+
+
   SubjectOption,
 
 
 
-  SuggestedAction,
-
-
-
+  FocusGroupTableRow,
 } from "./types"
 
 
@@ -163,7 +164,14 @@ type ClassRow = {
 
 
 
-
+const getScoreTone = (score: number | null) => {
+  if (score === null || score === undefined) {
+    return "notStarted" as const
+  }
+  if (score >= 80) return "strong" as const
+  if (score >= 50) return "average" as const
+  return "weak" as const
+}
 
 
 
@@ -1381,7 +1389,79 @@ function buildFallbackFocusGroups(subjectName: string): FocusGroup[] {
 }
 
 
-function buildFocusGroupsFromStudents(students: StudentInsight[], subjectName: string): FocusGroup[] {
+function collectWeakSectionsByStudent(modules: ModuleInsight[]): Map<
+  string,
+  { section_id?: string; section_title?: string; section_score: number | null }[]
+> {
+  const weakMap = new Map<string, { section_title?: string; section_score: number | null }[]>()
+  for (const module of modules) {
+    const studentRoster = module.students ?? []
+    for (const student of studentRoster) {
+      if (!student.student_id) continue
+      const sections = student.sections ?? []
+      for (const section of sections) {
+        const score = section.section_score
+        if (score !== null && score !== undefined && score < 50) {
+          const entries = weakMap.get(student.student_id) ?? []
+          entries.push({
+            section_id: section.section_id,
+            section_title: section.section_title,
+            section_score: score,
+          })
+          weakMap.set(student.student_id, entries)
+        }
+      }
+    }
+  }
+  return weakMap
+}
+
+function collectStrongSectionsByStudent(modules: ModuleInsight[]): Map<
+  string,
+  { section_id?: string; section_title?: string; section_score: number | null }[]
+> {
+  const strongMap = new Map<string, { section_title?: string; section_score: number | null }[]>()
+  for (const module of modules) {
+    const studentRoster = module.students ?? []
+    for (const student of studentRoster) {
+      if (!student.student_id) continue
+      const sections = student.sections ?? []
+      for (const section of sections) {
+        const score = section.section_score
+        if (score !== null && score !== undefined && score >= 80) {
+          const entries = strongMap.get(student.student_id) ?? []
+          entries.push({
+            section_id: section.section_id,
+            section_title: section.section_title,
+            section_score: score,
+          })
+          strongMap.set(student.student_id, entries)
+        }
+      }
+    }
+  }
+  return strongMap
+}
+
+function formatWeakSections(weakSections: { section_title?: string; section_score: number | null }[]) {
+  return weakSections
+    .slice(0, 3)
+    .map((section) => {
+      const title = section.section_title ?? "Section"
+      const score =
+        section.section_score !== null && section.section_score !== undefined
+          ? `${section.section_score}%`
+          : "--"
+      return `${title} ${score}`
+    })
+    .join(" · ")
+}
+
+function buildFocusGroupsFromStudents(
+  students: StudentInsight[],
+  modules: ModuleInsight[],
+  subjectName: string,
+): FocusGroup[] {
   if (!students.length) {
     return buildFallbackFocusGroups(subjectName)
   }
@@ -1403,13 +1483,15 @@ function buildFocusGroupsFromStudents(students: StudentInsight[], subjectName: s
       })
       .slice(0, 3)
 
+  const weakSectionsByStudent = collectWeakSectionsByStudent(modules)
+  const strongSectionsByStudent = collectStrongSectionsByStudent(modules)
   const stuck = buildBucket(
-    (student) => (student.overall_average ?? 0) < 60,
+    (student) => getScoreTone(student.overall_average ?? null) === "weak",
     (a, b) => averageValue(a) - averageValue(b),
   )
 
   const ready = buildBucket(
-    (student) => (student.overall_average ?? 0) >= 85,
+    (student) => (student.overall_average ?? 0) >= 80,
     (a, b) => averageValue(b) - averageValue(a),
   )
 
@@ -1458,18 +1540,103 @@ function buildFocusGroupsFromStudents(students: StudentInsight[], subjectName: s
           },
         ]
 
+  const buildStuckItems = (): FocusItem[] =>
+    stuck.length
+      ? stuck.map((student) => {
+          const weakSections = weakSectionsByStudent.get(student.student_id) ?? []
+          const masteryScore =
+            student.overall_average !== null && student.overall_average !== undefined
+              ? Math.round(student.overall_average)
+              : "--"
+          const detailParts = [`Mastery map ${masteryScore}%`]
+          if (weakSections.length) {
+            detailParts.push(`Weak sections: ${formatWeakSections(weakSections)}`)
+          }
+          const detail = detailParts.filter(Boolean).join(" · ")
+          const tag = weakSections.length
+            ? `${weakSections.length} weak section${weakSections.length === 1 ? "" : "s"}`
+            : "Jarvis hints pending"
+          return {
+            name: student.student_name,
+            detail,
+            tag,
+          }
+        })
+      : [
+          {
+            name: "No students currently stuck",
+            detail: `${safeSubject} has no students in this bucket yet.`,
+            tag: "Awaiting data",
+          },
+        ]
+
+  const buildTableRows = (): FocusGroupTableRow[] =>
+    stuck.flatMap((student) => {
+      const weakSections = weakSectionsByStudent.get(student.student_id) ?? []
+      if (weakSections.length) {
+        return weakSections.map((section) => ({
+          student_id: student.student_id,
+          student_name: student.student_name,
+          section_title: section.section_title,
+          section_score: section.section_score,
+          mastery:
+            student.overall_average !== null && student.overall_average !== undefined
+              ? Math.round(student.overall_average)
+              : "--",
+          hints: student.hints ?? 0,
+          section_id: section.section_id,
+        }))
+      }
+      return [
+        {
+          student_id: student.student_id,
+          student_name: student.student_name,
+          section_score: student.overall_average ?? null,
+          mastery:
+            student.overall_average !== null && student.overall_average !== undefined
+              ? Math.round(student.overall_average)
+              : "--",
+          hints: student.hints ?? 0,
+          section_id: "overall",
+        },
+      ]
+    })
+
+  const buildReadyTableRows = (): FocusGroupTableRow[] =>
+    ready.flatMap((student) => {
+      const strongSections = strongSectionsByStudent.get(student.student_id) ?? []
+      if (strongSections.length) {
+        return strongSections.map((section) => ({
+          student_id: student.student_id,
+          student_name: student.student_name,
+          section_title: section.section_title,
+          section_score: section.section_score,
+          mastery:
+            student.overall_average !== null && student.overall_average !== undefined
+              ? Math.round(student.overall_average)
+              : "--",
+          hints: student.hints ?? 0,
+          section_id: section.section_id,
+        }))
+      }
+      return []
+    })
+
   return [
     {
       title: "Stuck Students",
       description: "Low mastery + high Jarvis hints",
-      items: buildItems(stuck, "No students currently stuck"),
+      items: buildStuckItems(),
       actions: ["Create review plan", "Pull for small group", "Send to AI tutor"],
+      strugglingActions: ["concept", "weakness"] as StrugglingActionType[],
+      tableRows: buildTableRows(),
     },
     {
       title: "Ready for Extension",
       description: "Strong growth, ready to deepen thinking",
       items: buildItems(ready, "No students ready for extension"),
       actions: ["Share challenge set", "Invite to showcase", "Pair with peer mentors"],
+      tableRows: buildReadyTableRows(),
     },
     {
       title: "Incomplete Objectives",
@@ -2274,6 +2441,59 @@ export default async function ClassInsightPage({
 
 
   const totalHintsUsed = insights.summary.total_hints_used ?? 0
+  const studentsTracked = insights.summary.total_students ?? 0
+  const assignedSectionsCount = insights.summary.sections_assigned ?? insights.summary.sections_tracked ?? 0
+  const totalExpectedSectionCompletions =
+    assignedSectionsCount > 0 && studentsTracked > 0
+      ? assignedSectionsCount * studentsTracked
+      : 0
+  const moduleAverageValues = moduleInsights
+    .map((module) => module.overall_average)
+    .filter((value): value is number => value !== null)
+  const moduleAverageScore =
+    moduleAverageValues.length > 0
+      ? Math.round(
+          moduleAverageValues.reduce((sum, value) => sum + value, 0) / moduleAverageValues.length,
+        )
+      : null
+  const subjectAverageScore =
+    moduleAverageScore ?? (insights.summary.average_score !== null ? Math.round(insights.summary.average_score) : null)
+
+  const studentExerciseCompletions = moduleInsights.flatMap((module) =>
+    (module.students ?? []).map((student) => ({
+      student_name: student.student_name,
+      module_id: module.module_id,
+      module_title: module.module_title,
+      completedSections: (student.sections ?? [])
+        .filter((section) => section.exercise_status === "Completed" || section.completed)
+        .map((section) => ({
+          section_title: section.section_title,
+          section_id: section.section_id,
+        })),
+    })),
+  )
+  const totalCompletedSections = studentExerciseCompletions.reduce(
+    (sum, student) => sum + student.completedSections.length,
+    0,
+  )
+  const subjectCompletionPercent =
+    totalExpectedSectionCompletions > 0
+      ? Math.min(100, Math.round((totalCompletedSections / totalExpectedSectionCompletions) * 100))
+      : null
+
+  console.log("Subject completion inputs", {
+    studentsTracked,
+    assignedSectionsCount,
+    sectionExercisesCompleted: totalCompletedSections,
+    totalExpectedSectionCompletions,
+    subjectCompletionPercent,
+    subjectAverageScore,
+    moduleAverageScore,
+  })
+  console.log(
+    "Per-student section exercise completions",
+    JSON.stringify(studentExerciseCompletions, null, 2),
+  )
 
 
 
@@ -2383,7 +2603,7 @@ export default async function ClassInsightPage({
 
 
 
-  const focusGroups = buildFocusGroupsFromStudents(studentInsights, selectedSubjectName)
+  const focusGroups = buildFocusGroupsFromStudents(studentInsights, moduleInsights, selectedSubjectName)
 
 
 
@@ -2397,202 +2617,37 @@ export default async function ClassInsightPage({
 
   const quickStats: QuickStat[] = [
 
-
-
-
-
-
-
     {
-
-
-
-
-
-
-
-      label: "Adaptive score",
-
-
-
-
-
-
-
-      value:
-
-
-
-
-
-
-
-        insights.summary.average_score === null
-
-
-
-
-
-
-
-          ? "--"
-
-
-
-
-
-
-
-          : `${Math.round(insights.summary.average_score)}%`,
-
-
-
-
-
-
-
-      sublabel: "Rolling 30 days",
-
-
-
-
-
-
-
-    },
-
-
-
-
-
-
-
-    {
-
-
-
-
-
-
 
       label: "Hints used",
 
-
-
-
-
-
-
       value: `${insights.summary.total_hints_used}`,
-
-
-
-
-
-
 
       sublabel: "Jarvis tips",
 
-
-
-
-
-
-
     },
 
-
-
-
-
-
-
     {
-
-
-
-
-
-
 
       label: "Students tracked",
 
-
-
-
-
-
-
       value: `${insights.summary.total_students}`,
-
-
-
-
-
-
 
       sublabel: "Active this week",
 
-
-
-
-
-
-
     },
-
-
-
-
-
-
 
     {
 
-
-
-
-
-
-
       label: "Sections active",
-
-
-
-
-
-
 
       value: `${insights.summary.sections_tracked}`,
 
-
-
-
-
-
-
       sublabel: "Curriculum tiles",
-
-
-
-
-
-
 
     },
 
-
-
-
-
-
-
   ]
-
-
-
-
-
 
 
   quickStats.push({
@@ -2605,25 +2660,10 @@ export default async function ClassInsightPage({
   const jarvisCount = studentsWithHints.length
 
 
-
-
-
-
-
   const jarvisLog = `Jarvis delivered ${totalHintsUsed} hints to ${jarvisCount} students in ${selectedSubjectName}.`
 
 
-
-
-
-
-
   const breadcrumbs = [
-
-
-
-
-
 
 
     "Your Classes",
@@ -2818,6 +2858,9 @@ export default async function ClassInsightPage({
 
 
       studentAiUsage={studentAiUsage}
+      studentsTracked={studentsTracked}
+      subjectCompletionPercent={subjectCompletionPercent}
+      subjectAverageScore={subjectAverageScore}
 
 
 

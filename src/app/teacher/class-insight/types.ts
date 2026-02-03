@@ -84,6 +84,8 @@ export type FocusGroup = {
   description: string
   items: FocusItem[]
   actions: string[]
+  strugglingActions?: StrugglingActionType[]
+  tableRows?: FocusGroupTableRow[]
 }
 
 export type SuggestedAction = {
@@ -117,6 +119,18 @@ export type ModuleInsight = {
   section_count: number
   struggling_count: number
   students: ModuleStudentBreakdown[]
+}
+
+export type StrugglingActionType = "concept" | "weakness"
+
+export type FocusGroupTableRow = {
+  student_id: string
+  student_name: string
+  section_title?: string
+  section_score: number | null
+  mastery: number | string | null
+  hints?: number | null
+  section_id?: string
 }
 
 export type ModuleStudentBreakdown = {

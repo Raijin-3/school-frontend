@@ -3,6 +3,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Sparkles, TrendingUp, X } from "lucide-react"
+import { toast } from "@/lib/toast"
 import type {
   AiHighlight,
   AiUsageSegment,
@@ -13,6 +14,7 @@ import type {
   ModuleStudentSection,
   QuickStat,
   StudentAiUsage,
+  StrugglingActionType,
   SubjectOption,
   SuggestedAction,
 } from "./types"
@@ -41,6 +43,9 @@ type Props = {
   focusGroups: FocusGroup[]
   suggestedActions: SuggestedAction[]
   jarvisLog: string
+  studentsTracked: number
+  subjectCompletionPercent?: number | null
+  subjectAverageScore?: number | null
 }
 
 const tileToneClasses: Record<"Strong" | "Average" | "Weak" | "NA" | "Not started", string> = {
@@ -73,6 +78,19 @@ const sectionStackColors: Record<
   weak: "#fb7185",
   notStarted: "#cbd5f5",
 }
+
+const strugglingActionCopy: Record<StrugglingActionType, { label: string; description: string }> = {
+  concept: {
+    label: "Concept-clearing AI notes/chat",
+    description: "Revisit the struggling topic with AI notes + chat coaching",
+  },
+  weakness: {
+    label: "Weakness builder quiz",
+    description: "Quick adaptive quiz targeted at the weak objectives",
+  },
+}
+
+const strugglingActionTypes: StrugglingActionType[] = ["concept", "weakness"]
 
 const sectionToneLabels: Record<
   "strong" | "average" | "weak" | "notStarted",
@@ -108,10 +126,13 @@ type SectionProgressSummary = {
   notStarted: number
   averageScore: number | null
   assigned: boolean
+  assignedStudents: number
+  attemptedStudents: number
 }
 
 function buildSectionProgressSummaries(
   students: MasteryTile["students"] = [],
+  trackedStudentsCount: number = 0,
 ): SectionProgressSummary[] {
   const sectionMap = new Map<string, SectionProgressSummary>()
   const order: string[] = []
@@ -130,6 +151,8 @@ function buildSectionProgressSummaries(
           notStarted: 0,
           averageScore: null,
           assigned: section.assigned ?? false,
+          assignedStudents: 0,
+          attemptedStudents: 0,
         })
         order.push(key)
       }
@@ -141,15 +164,24 @@ function buildSectionProgressSummaries(
         completed: section.completed,
         section_detail: section,
       })
+      const isAssigned = section.assigned ?? false
+      if (isAssigned && trackedStudentsCount > 0) {
+        summary.assignedStudents = trackedStudentsCount
+      }
       const score = section.section_score
       if (score === null || score === undefined) {
         summary.notStarted += 1
-      } else if (score >= 80) {
-        summary.strong += 1
-      } else if (score >= 50) {
-        summary.average += 1
       } else {
-        summary.weak += 1
+        if (score >= 80) {
+          summary.strong += 1
+        } else if (score >= 50) {
+          summary.average += 1
+        } else {
+          summary.weak += 1
+        }
+        if (isAssigned) {
+          summary.attemptedStudents += 1
+        }
       }
     }
   }
@@ -171,6 +203,9 @@ function buildSectionProgressSummaries(
       }
       return bScore - aScore
     })
+    if (summary.assigned && summary.assignedStudents > 0) {
+      summary.notStarted = Math.max(summary.assignedStudents - summary.attemptedStudents, summary.notStarted)
+    }
   }
 
   return order.map((id) => sectionMap.get(id)!)
@@ -205,9 +240,42 @@ export default function ClassInsightShell(props: Props) {
     focusGroups,
     suggestedActions,
     jarvisLog,
+    studentsTracked,
+    subjectCompletionPercent,
+    subjectAverageScore,
   } = props
 
   const router = useRouter()
+  const quickStatsToRender = useMemo(() => {
+    if (!quickStats.length) return quickStats
+    const cards: QuickStat[] = []
+    quickStats.forEach((metric, index) => {
+      cards.push(metric)
+      if (index === 0) {
+        const completionValue =
+          subjectCompletionPercent !== null && subjectCompletionPercent !== undefined
+            ? `${subjectCompletionPercent}%`
+            : "--"
+        const averageValue =
+          subjectAverageScore !== null && subjectAverageScore !== undefined
+            ? `${subjectAverageScore}%`
+            : "--"
+        cards.push(
+          {
+            label: "Subject completion",
+            value: completionValue,
+            sublabel: "Assigned sections",
+          },
+          {
+            label: "Subject average",
+            value: averageValue,
+            sublabel: "Selected subject",
+          },
+        )
+      }
+    })
+    return cards
+  }, [quickStats, subjectCompletionPercent, subjectAverageScore])
   const [activeTile, setActiveTile] = useState<MasteryTile | null>(null)
   const [expandedStudentId, setExpandedStudentId] = useState<string | null>(null)
   const [sectionProgressModule, setSectionProgressModule] = useState<MasteryTile | null>(null)
@@ -220,7 +288,46 @@ export default function ClassInsightShell(props: Props) {
   >({})
   const [loadingStudentDetailsId, setLoadingStudentDetailsId] = useState<string | null>(null)
   const [studentDetailErrors, setStudentDetailErrors] = useState<Record<string, string>>({})
+  const [assignmentHistory, setAssignmentHistory] = useState<Record<string, string>>({})
+  const [focusGroupActionHistory, setFocusGroupActionHistory] = useState<Record<string, string>>({})
+  const [studentActionHistory, setStudentActionHistory] = useState<Record<string, string>>({})
   const totalAiUsage = aiUsage.reduce((sum, segment) => sum + segment.value, 0)
+
+  const handleStrugglingAction = useCallback(
+    (tile: MasteryTile, action: StrugglingActionType) => {
+      const actionCopy = strugglingActionCopy[action]
+      const message = `${actionCopy.label} assigned for ${tile.topic}`
+      setAssignmentHistory((prev) => ({ ...prev, [tile.id]: message }))
+      toast.success(message)
+    },
+    [],
+  )
+
+  const handleStudentAction = useCallback(
+    (
+      sectionId: string,
+      studentId: string | undefined,
+      studentName: string,
+      action: StrugglingActionType,
+    ) => {
+      const actionCopy = strugglingActionCopy[action]
+      const message = `${actionCopy.label} assigned for ${studentName}`
+      const key = `${sectionId}-${studentId ?? studentName}`
+      setStudentActionHistory((prev) => ({ ...prev, [key]: message }))
+      toast.success(message)
+    },
+    [],
+  )
+
+  const handleFocusGroupAction = useCallback(
+    (groupTitle: string, action: StrugglingActionType) => {
+      const actionCopy = strugglingActionCopy[action]
+      const message = `${actionCopy.label} assigned for ${groupTitle}`
+      setFocusGroupActionHistory((prev) => ({ ...prev, [groupTitle]: message }))
+      toast.success(message)
+    },
+    [],
+  )
 
   const chartGradient = useMemo(() => {
     if (!totalAiUsage) return "conic-gradient(#e5e7eb, #cbd5f5)"
@@ -258,8 +365,8 @@ export default function ClassInsightShell(props: Props) {
   }, [sectionProgressModule, studentSectionsCache])
 
   const sectionSummaries = useMemo(
-    () => buildSectionProgressSummaries(sectionStudentsWithCache),
-    [sectionStudentsWithCache],
+    () => buildSectionProgressSummaries(sectionStudentsWithCache, studentsTracked),
+    [sectionStudentsWithCache, studentsTracked],
   )
 
   const aggregatedSectionStats = useMemo(() => {
@@ -283,13 +390,29 @@ export default function ClassInsightShell(props: Props) {
     }
   }, [sectionSummaries])
 
+  const assignedStudentStats = useMemo(() => {
+    let assignedStudents = 0
+    let attemptedStudents = 0
+    for (const section of sectionSummaries) {
+      if (section.assignedStudents > 0) {
+        assignedStudents += section.assignedStudents
+        attemptedStudents += section.attemptedStudents
+      }
+    }
+    return {
+      assignedStudents,
+      attemptedStudents,
+      notStartedStudents: Math.max(assignedStudents - attemptedStudents, 0),
+    }
+  }, [sectionSummaries])
+
   const moduleSectionCompletionPercent = useMemo(() => {
-    if (!sectionProgressModule || !sectionSummaries.length) return 0
-    const recorded = sectionSummaries.reduce((sum, section) => sum + section.studentScores.length, 0)
-    const potential = sectionSummaries.length * sectionProgressModule.students.length
-    if (!potential) return 0
-    return Math.round((recorded / potential) * 100)
-  }, [sectionProgressModule, sectionSummaries])
+    if (!sectionSummaries.length) return null
+    const totalAssigned = sectionSummaries.reduce((sum, section) => sum + section.assignedStudents, 0)
+    if (!totalAssigned) return null
+    const totalAttempted = sectionSummaries.reduce((sum, section) => sum + section.attemptedStudents, 0)
+    return Math.round((totalAttempted / totalAssigned) * 100)
+  }, [sectionSummaries])
 
   const activeTileIdRef = useRef<string | null>(null)
 
@@ -482,7 +605,7 @@ export default function ClassInsightShell(props: Props) {
                 <th className="px-4 py-3 text-left text-[12px] font-semibold uppercase tracking-[0.1em] text-slate-500">
                   <b>Struggling</b>
                 </th>
-                <th className="px-4 py-3 text-left text-[12px] font-semibold uppercase tracking-[0.1em] text-slate-500">
+                <th className="px-4 py-3 text-center text-[12px] font-semibold uppercase tracking-[0.1em] text-slate-500">
                   <b>Action</b>
                 </th>
               </tr>
@@ -517,14 +640,14 @@ export default function ClassInsightShell(props: Props) {
                           <p className="text-[12px] text-slate-500 mt-2">
                             {tile.strengthSummary.strong} Strong · {tile.strengthSummary.average} Average · {tile.strengthSummary.weak} weak · {tile.strengthSummary.notStarted} Not started
                           </p>
-                          <button
+                          {/* <button
                             type="button"
                             onClick={() => handleSectionProgressOpen(tile)}
                             className="mt-3 inline-flex items-center justify-center rounded-full border border-slate-200 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-sky-500 transition hover:border-sky-400 hover:text-sky-700"
                             aria-label={`Open section progress for ${tile.topic}`}
                           >
                             {isAccordionOpen ? "Close section details" : "Section progress"}
-                          </button>
+                          </button> */}
                         </td>
                         <td className="px-4 py-3">
                           <div className="text-2xl font-semibold text-slate-900">{tile.mastery}%</div>
@@ -537,8 +660,8 @@ export default function ClassInsightShell(props: Props) {
                           <div className="text-sm font-semibold text-slate-900">{tile.struggling}</div>
                           <p className="text-[11px] text-slate-500">Students struggling</p>
                         </td>
-                        <td className="px-4 py-3">
-                          <button
+                        <td className="px-4  text-center py-3">
+                          {/* <button
                             type="button"
                             onClick={() => setActiveTile(tile)}
                             className="inline-flex items-center justify-center rounded-full border border-transparent px-4 py-1 text-[11px] font-semibold uppercase tracking-[0.1em] text-white transition shadow-lg hover:shadow-xl"
@@ -546,6 +669,15 @@ export default function ClassInsightShell(props: Props) {
                             aria-label={`Open ${tile.topic} student insight`}
                           >
                             Students insight
+                          </button> */}
+                          <button
+                            type="button"
+                            onClick={() => handleSectionProgressOpen(tile)}
+                            style={{ background: "linear-gradient(90deg, #ad46ff 0%, #615fff 100%)" }}
+                            className="mt-3 inline-flex items-center justify-center text-white rounded-full border border-slate-200 px-5 py-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-sky-500 transition hover:border-sky-400 hover:text-sky-700"
+                            aria-label={`Open section progress for ${tile.topic}`}
+                          >
+                            {isAccordionOpen ? "Close section details" : "Section progress"}
                           </button>
                         </td>
                       </tr>
@@ -558,8 +690,14 @@ export default function ClassInsightShell(props: Props) {
                                   <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Section progress</p>
                                   <h3 className="text-lg font-semibold text-slate-900">{sectionProgressModule?.topic}</h3>
                                   <p className="text-xs text-slate-500">
-                                    {sectionProgressModule?.students.length ?? 0} students tracked · {sectionSummaries.length} sections
+                                    {assignedStudentStats.attemptedStudents} students tracked · {sectionSummaries.length} sections
                                   </p>
+                                  {/* {assignedStudentStats.assignedStudents > 0 && (
+                                    <p className="text-xs text-slate-500">
+                                      Assigned broken down · Attempted: {assignedStudentStats.attemptedStudents} · Not started:{" "}
+                                      {assignedStudentStats.notStartedStudents}
+                                    </p>
+                                  )} */}
                                 </div>
                                 {/* <button
                                   type="button"
@@ -573,7 +711,13 @@ export default function ClassInsightShell(props: Props) {
                                 <div className="rounded-2xl border border-slate-100 bg-slate-50/80 p-4">
                                   <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Sections tracked</p>
                                   <p className="text-2xl font-semibold text-slate-900">{sectionSummaries.length}</p>
-                                  <p className="text-xs text-slate-500">{sectionProgressModule?.students.length ?? 0} students</p>
+                                  <p className="text-xs text-slate-500">{studentsTracked} students</p>
+                                  {assignedStudentStats.assignedStudents > 0 && (
+                                    <p className="text-xs text-slate-500">
+                                      Assigned broken down · Attempted: {assignedStudentStats.attemptedStudents} · Not started:{" "}
+                                      {assignedStudentStats.notStartedStudents}
+                                    </p>
+                                  )}
                                 </div>
                                 <div className="rounded-2xl border border-slate-100 bg-slate-50/80 p-4">
                                   <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Average score</p>
@@ -586,11 +730,13 @@ export default function ClassInsightShell(props: Props) {
                                 </div>
                                 <div className="rounded-2xl border border-slate-100 bg-slate-50/80 p-4">
                                   <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Module completion</p>
-                                  <p className="text-2xl font-semibold text-slate-900">{moduleSectionCompletionPercent}%</p>
+                                  <p className="text-2xl font-semibold text-slate-900">
+                                    {moduleSectionCompletionPercent !== null ? `${moduleSectionCompletionPercent}%` : "--"}
+                                  </p>
                                   <p className="text-xs text-slate-500">Expected entries vs recorded</p>
                                 </div>
                               </div> */}
-                              <div>
+                              {/* <div>
                                 <div className="relative h-2 w-full overflow-hidden rounded-full bg-slate-200">
                                   {aggregatedSectionStats.totalSegments > 0 ? (
                                     (["strong", "average", "weak", "notStarted"] as const).map((key) => {
@@ -633,7 +779,7 @@ export default function ClassInsightShell(props: Props) {
                                     Section distributions populate once students attempt the curriculum.
                                   </p>
                                 )}
-                              </div>
+                              </div> */}
                               <div className="overflow-x-auto">
                                 <table className="min-w-full text-sm">
                                   <thead>
@@ -668,11 +814,12 @@ export default function ClassInsightShell(props: Props) {
                                         1,
                                         section.strong + section.average + section.weak + section.notStarted,
                                       )
-                                      const completionPercent = sectionProgressModule?.students.length
-                                        ? Math.round(
-                                            (section.studentScores.length / sectionProgressModule.students.length) * 100,
-                                          )
-                                        : 0
+                                      const completionPercent =
+                                        section.assignedStudents > 0
+                                          ? Math.round(
+                                              (section.attemptedStudents / section.assignedStudents) * 100,
+                                            )
+                                          : null
                                       const isSectionOpen = openSectionId === section.section_id
 
                                       return (
@@ -698,13 +845,22 @@ export default function ClassInsightShell(props: Props) {
                                             <td className="px-3 py-3 text-center text-slate-600">{section.strong}</td>
                                             <td className="px-3 py-3 text-center text-slate-600">{section.average}</td>
                                             <td className="px-3 py-3 text-center text-slate-600">{section.weak}</td>
-                                            <td className="px-3 py-3 text-center text-slate-600">{section.notStarted}</td>
-                                            <td className="px-3 py-3 text-center text-slate-600">{completionPercent}%</td>
+                                            <td className="px-3 py-3 text-center text-slate-600">{Math.max(section.assignedStudents - section.attemptedStudents, 0)}</td>
+                                            <td className="px-3 py-3 text-center text-slate-600">
+                                              {completionPercent !== null ? `${completionPercent}%` : "--"}
+                                              {/* {section.assignedStudents > 0 && (
+                                                <div className="text-[11px] text-slate-400">
+                                                  Attempted {section.attemptedStudents} · Not started{" "}
+                                                  {Math.max(section.assignedStudents - section.attemptedStudents, 0)}
+                                                </div>
+                                              )} */}
+                                            </td>
                                             <td className="px-3 py-3 text-center">
                                               <button
                                                 type="button"
                                                 onClick={() => toggleSectionAccordion(section.section_id)}
-                                                className="text-[11px] font-semibold uppercase tracking-[0.2em] text-sky-500 transition hover:text-sky-700"
+                                                style={{ background: "linear-gradient(90deg, #201e20 0%, #053a2f 100%)" }}
+                                                className="text-[11px] font-semibold text-white px-2 py-1 tracking-[0.1em] text-sky-500 transition hover:text-sky-700"
                                                 aria-expanded={isSectionOpen}
                                               >
                                                 {isSectionOpen ? "Hide students" : "Show students"}
@@ -713,43 +869,54 @@ export default function ClassInsightShell(props: Props) {
                                           </tr>
                                           {isSectionOpen && (
                                             <tr className="bg-slate-50">
-                                              <td colSpan={8} className="px-3 py-3">
+                                              <td colSpan={9} className="px-3 py-3">
                                                 <div className="space-y-2">
                                                   {section.studentScores.length ? (
                                                     <div className="overflow-x-auto">
                                                       <table className="min-w-full text-sm">
-                                                        <thead>
+                                                        <thead  style={{ backgroundColor: "black" }}>
                                                           <tr className="text-[11px] uppercase tracking-[0.2em] text-slate-500">
-                                                            <th className="px-3 py-2 text-left">Student</th>
-                                                            <th className="px-3 py-2 text-right">Score</th>
-                                                            <th className="px-3 py-2 text-right">Adaptive Quiz</th>
-                                                            <th className="px-3 py-2 text-right">Practice Exercises</th>
-                                                            <th className="px-3 py-2 text-right">Hints Used</th>
+                                                            <th className="px-3 py-2 text-white text-left">S. no</th>
+                                                            <th className="px-3 py-2 text-white text-left">Student</th>
+                                                            <th className="px-3 py-2 text-white text-center">Score</th>
+                                                            <th className="px-3 py-2 text-white text-center">Adaptive Quiz</th>
+                                                            <th className="px-3 py-2 text-white text-center">Practice Exercises</th>
+                                                            <th className="px-3 py-2 text-white text-center">Hints Used</th>
+                                                            <th className="px-3 py-2 text-white text-center">Action</th>
                                                           </tr>
                                                         </thead>
                                                         <tbody className="divide-y divide-slate-100">
-                                                          {section.studentScores.map((student) => {
+                                                          {section.studentScores.map((student, index) => {
                                                             const detail = student.section_detail
-                                                            const tone = getScoreTone(detail.section_score)
+                                                            const scoreTone = getScoreTone(detail.section_score)
+                                                            const studentKey = `${section.section_id}-${student.student_id ?? student.student_name}`
+                                                            const showStudentActions = scoreTone === "weak"
+                                                            const lastStudentAction = studentActionHistory[studentKey]
+                                                            const tone = scoreTone
                                                             const scoreLabel =
                                                               detail.section_score !== null && detail.section_score !== undefined
                                                                 ? `${detail.section_score}%`
                                                                 : "--"
                                                             return (
                                                               <tr key={`${section.section_id}-${student.student_id}`}>
+                                                                <td className="px-3 py-3 text-left">
+                                                                  <p>
+                                                                    {index + 1}
+                                                                  </p>
+                                                                </td>
                                                                 <td className="px-3 py-3">
                                                                   <p className="font-semibold text-slate-900">{student.student_name}</p>
                                                                   {/* <p className="text-[11px] text-slate-500">
                                                                     {detail.completed ? "Completed" : "Not started"} · {detail.adaptive_status} · {detail.exercise_status}
                                                                   </p> */}
                                                                 </td>
-                                                                <td className="px-3 py-3 text-right">
+                                                                <td className="px-3 py-3 text-center">
                                                                   <span className={`font-semibold ${sectionScoreToneClasses[tone]}`}>{scoreLabel}</span>
                                                                   <div className="text-[10px] uppercase tracking-[0.2em] text-slate-400">
                                                                     {sectionToneLabels[tone]}
                                                                   </div>
                                                                 </td>
-                                                                <td className="px-3 py-3 text-right">
+                                                                <td className="px-3 py-3 text-center">
                                                                   <p className={`font-semibold ${statusToneClasses[detail.adaptive_status]}`}>
                                                                     {detail.adaptive_percent ?? "--"}%
                                                                   </p>
@@ -757,7 +924,7 @@ export default function ClassInsightShell(props: Props) {
                                                                     {detail.adaptive_status}
                                                                   </p>
                                                                 </td>
-                                                                <td className="px-3 py-3 text-right">
+                                                                <td className="px-3 py-3 text-center">
                                                                   <p className={`font-semibold ${statusToneClasses[detail.exercise_status]}`}>
                                                                     {detail.exercise_percent ?? "--"}%
                                                                   </p>
@@ -765,7 +932,7 @@ export default function ClassInsightShell(props: Props) {
                                                                     {detail.exercise_status}
                                                                   </p>
                                                                 </td>
-                                                                <td className="px-3 py-3 text-right">
+                                                                <td className="px-3 py-3 text-center">
                                                                   {detail.exercise_hint_count ? (
                                                                     <div className="space-y-1 text-[13px] text-slate-500">
                                                                       <p className="font-semibold text-slate-900">
@@ -783,6 +950,48 @@ export default function ClassInsightShell(props: Props) {
                                                                     </div>
                                                                   ) : (
                                                                     <span className="text-[11px] text-slate-400">No hints</span>
+                                                                  )}
+                                                                </td>
+                                                                <td className="px-3 py-3 text-center align-top">
+                                                                  {showStudentActions ? (
+                                                                    <div className="space-y-2">
+                                                                      <p className="text-[12px] font-semibold text-rose-600">
+                                                                        Need help
+                                                                      </p>
+                                                                      <div className="grid gap-2 text-[10px] sm:grid-cols-2">
+                                                                        {(strugglingActionTypes).map((actionType) => (
+                                                                          <button
+                                                                            key={actionType}
+                                                                            type="button"
+                                                                            onClick={() =>
+                                                                              handleStudentAction(
+                                                                                section.section_id,
+                                                                                student.student_id,
+                                                                                student.student_name,
+                                                                                actionType,
+                                                                              )
+                                                                            }
+                                                                            className="text-left rounded-2xl border border-slate-200 bg-white px-2 py-1 font-semibold text-slate-900 transition hover:border-slate-300"
+                                                                          >
+                                                                            <span className="block text-[11px]">
+                                                                              {strugglingActionCopy[actionType].label}
+                                                                            </span>
+                                                                            <span className="text-[9px] font-normal text-slate-500">
+                                                                              {strugglingActionCopy[actionType].description}
+                                                                            </span>
+                                                                          </button>
+                                                                        ))}
+                                                                      </div>
+                                                                      {lastStudentAction && (
+                                                                        <p className="text-[10px] text-slate-800">
+                                                                          Last action: {lastStudentAction}
+                                                                        </p>
+                                                                      )}
+                                                                    </div>
+                                                                  ) : (
+                                                                    <p className="text-[12px] font-semibold text-emerald-600">
+                                                                      On Track
+                                                                    </p>
                                                                   )}
                                                                 </td>
                                                               </tr>
@@ -989,7 +1198,7 @@ export default function ClassInsightShell(props: Props) {
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid gap-6 lg:grid-cols-1">
         <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm">
           <div className="flex items-center justify-between">
             <div>
@@ -1030,22 +1239,167 @@ export default function ClassInsightShell(props: Props) {
                     {isOpen && (
                       <div
                         id={`focus-${group.title}`}
-                        className="space-y-2 border-t border-slate-200/80 px-5 py-4 text-sm text-slate-500"
+                        className="space-y-4 border-t border-slate-200/80 px-5 py-4 text-sm text-slate-500"
                       >
-                        <div className="space-y-1">
-                          {group.items.map((item) => (
-                            <div
-                              key={`${group.title}-${item.name}`}
-                              className="flex items-center justify-between border-b border-slate-100 pb-2 last:border-0 last:pb-0"
-                            >
-                              <div className="min-w-0">
-                                <p className="font-semibold text-slate-900">{item.name}</p>
-                                <p>{item.detail}</p>
+                        {group.title === "Stuck Students" ? (
+                          <div className="space-y-4">
+                            <div className="rounded-2xl border border-slate-100 bg-slate-50/80 p-4 shadow-sm">
+                              <div className="flex items-start justify-between gap-4">
+                                <div>
+                                  <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Stuck students</p>
+                                  <p className="text-sm font-semibold text-slate-900">Weak sections needing attention</p>
+                                  <p className="text-xs text-slate-500">
+                                    Students whose mastery is below 50% appear below; each row shows the section score that dipped under the threshold.
+                                  </p>
+                                </div>
+                                <div className="text-right text-xs text-slate-500">
+                                  {Array.from(new Set((group.tableRows ?? []).map((row) => row.student_id))).length} students · {(group.tableRows ?? []).length} weak entries
+                                </div>
                               </div>
-                              <span className="text-[11px] text-slate-400">{item.tag}</span>
                             </div>
-                          ))}
-                        </div>
+                            {(group.tableRows ?? []).length ? (
+                              <div className="overflow-x-auto rounded-2xl border border-slate-100 bg-white p-2 shadow-sm">
+                                <table className="min-w-full text-[11px]">
+                                  <thead>
+                                    <tr className="text-[12px] uppercase tracking-[0.2em] text-slate-500">
+                                      <th className="px-2 py-2 text-left">Student</th>
+                                      <th className="px-2 py-2 text-left">Section</th>
+                                      <th className="px-2 py-2 text-center">Score</th>
+                                      <th className="px-2 py-2 text-center">Hints</th>
+                                      <th className="px-2 py-2 text-center">Action</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-100 text-slate-700">
+                                    {group.tableRows.map((row, index) => {
+                                      const sectionTitle = row.section_title ?? "Overall"
+                                      const scoreLabel =
+                                        row.section_score !== null && row.section_score !== undefined
+                                          ? `${Math.round(row.section_score)}%`
+                                          : "--"
+                                      const sectionActionId = row.section_id ?? sectionTitle
+                                      const actionHistoryKey = `${sectionActionId}-${row.student_id}`
+                                      const lastAction = studentActionHistory[actionHistoryKey]
+                                      return (
+                                        <tr className="text-[12px]" key={`${row.student_id}-${index}-${sectionTitle}`}>
+                                          <td className="px-2 py-2">
+                                            <p className="font-semibold text-slate-900">{row.student_name}</p>
+                                          </td>
+                                          <td className="px-2 py-2">{sectionTitle}</td>
+                                          <td className="px-2 py-2 text-center font-semibold text-rose-600">{scoreLabel}</td>
+                                          <td className="px-2 py-2 text-center">{row.hints ?? "--"}</td>
+                                          <td className="px-2 py-2 text-center align-top">
+                                            <div className="space-y-2">
+                                              <div className="flex-wrap gap-3">
+                                                {strugglingActionTypes.map((actionType) => (
+                                                  <button
+                                                    key={actionType}
+                                                    type="button"
+                                                    onClick={() =>
+                                                      handleStudentAction(
+                                                        sectionActionId,
+                                                        row.student_id,
+                                                        row.student_name,
+                                                        actionType,
+                                                      )
+                                                    }
+                                                    className="text-left rounded-2xl border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold text-slate-900 transition hover:border-slate-300"
+                                                  >
+                                                    <span className="block text-[11px]">{strugglingActionCopy[actionType].label}</span>
+                                                    <span className="text-[9px] font-normal text-slate-500">
+                                                      {strugglingActionCopy[actionType].description}
+                                                    </span>
+                                                  </button>
+                                                ))}
+                                              </div>
+                                              {lastAction && (
+                                                <p className="text-[10px] text-slate-500">Last action: {lastAction}</p>
+                                              )}
+                                            </div>
+                                          </td>
+                                        </tr>
+                                      )
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                            ) : (
+                              <p className="text-xs text-slate-500">No weak students were flagged yet.</p>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="space-y-4">
+                            <div className="space-y-1">
+                              {group.items.map((item) => (
+                                <div
+                                  key={`${group.title}-${item.name}`}
+                                  className="flex items-center justify-between border-b border-slate-100 pb-2 last:border-0 last:pb-0"
+                                >
+                                  <div className="min-w-0">
+                                    <p className="font-semibold text-slate-900">{item.name}</p>
+                                    <p>{item.detail}</p>
+                                  </div>
+                                  <span className="text-[11px] text-slate-400">{item.tag}</span>
+                                </div>
+                              ))}
+                            </div>
+                            {group.title === "Ready for Extension" && group.tableRows && (
+                              <div className="space-y-3">
+                                <div className="rounded-2xl border border-slate-100 bg-slate-50/80 p-4 shadow-sm">
+                                  <div className="flex items-start justify-between gap-4">
+                                    <div>
+                                      <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Ready students</p>
+                                      <p className="text-sm font-semibold text-slate-900">Sections where students scored ≥ 80%</p>
+                                      <p className="text-xs text-slate-500">
+                                        Only students already flagged in the “Ready for Extension” bucket are shown; each entry represents a section where they exceeded 80%.
+                                      </p>
+                                    </div>
+                                    <div className="text-right text-xs text-slate-500">
+                                      {Array.from(new Set(group.tableRows.map((row) => row.student_id))).length} students ·{" "}
+                                      {group.tableRows.length} strong entries
+                                    </div>
+                                  </div>
+                                </div>
+                                {group.tableRows.length ? (
+                                  <div className="overflow-x-auto rounded-2xl border border-slate-100 bg-white p-2 shadow-sm">
+                                    <table className="min-w-full text-[11px]">
+                                      <thead>
+                                        <tr className="text-[11px] uppercase tracking-[0.2em] text-slate-500">
+                                          <th className="px-2 py-2 text-left">Student</th>
+                                          <th className="px-2 py-2 text-left">Section</th>
+                                          <th className="px-2 py-2 text-center">Score</th>
+                                          <th className="px-2 py-2 text-center">Hints</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-slate-100 text-slate-700">
+                                        {group.tableRows.map((row, index) => {
+                                          const sectionTitle = row.section_title ?? "Overall"
+                                          const scoreLabel =
+                                            row.section_score !== null && row.section_score !== undefined
+                                              ? `${Math.round(row.section_score)}%`
+                                              : "--"
+                                          return (
+                                            <tr key={`${row.student_id}-${index}-${sectionTitle}`}>
+                                              <td className="px-2 py-2">
+                                                <p className="font-semibold text-slate-900">{row.student_name}</p>
+                                              </td>
+                                              <td className="px-2 py-2">{sectionTitle}</td>
+                                              <td className="px-2 py-2 text-center font-semibold text-emerald-600">
+                                                {scoreLabel}
+                                              </td>
+                                              <td className="px-2 py-2 text-center">{row.hints ?? "--"}</td>
+                                            </tr>
+                                          )
+                                        })}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                ) : (
+                                  <p className="text-xs text-slate-500">No sections surpassing the readiness threshold yet.</p>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
                         <div className="flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.2em] text-slate-400">
                           {group.actions.map((action) => (
                             <span
@@ -1056,6 +1410,36 @@ export default function ClassInsightShell(props: Props) {
                             </span>
                           ))}
                         </div>
+                        {group.title !== "Stuck Students" && group.strugglingActions && (
+                          <div className="mt-2 space-y-1 text-left text-sm">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                              Weak focus actions
+                            </p>
+                            <p className="text-[11px] text-slate-500">
+                              Only students flagged as weak are shown above. Pick an action to re-engage them.
+                            </p>
+                            <div className="flex flex-wrap gap-2">
+                              {group.strugglingActions.map((actionType) => (
+                                <button
+                                  key={`${group.title}-${actionType}`}
+                                  type="button"
+                                  onClick={() => handleFocusGroupAction(group.title, actionType)}
+                                  className="flex max-w-[220px] flex-col items-start gap-0.5 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-900 transition hover:border-slate-300"
+                                >
+                                  <span>{strugglingActionCopy[actionType].label}</span>
+                                  <span className="text-[10px] font-normal text-slate-500">
+                                    {strugglingActionCopy[actionType].description}
+                                  </span>
+                                </button>
+                              ))}
+                            </div>
+                            {focusGroupActionHistory[group.title] && (
+                              <p className="text-[10px] text-slate-500">
+                                Last action: {focusGroupActionHistory[group.title]}
+                              </p>
+                            )}
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -1072,7 +1456,7 @@ export default function ClassInsightShell(props: Props) {
           )}
         </div>
 
-        <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm">
+        {/* <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Suggested actions</p>
@@ -1108,7 +1492,7 @@ export default function ClassInsightShell(props: Props) {
               </p>
             )}
           </div>
-        </div>
+        </div> */}
       </div>
     </div>
   )
@@ -1176,7 +1560,7 @@ export default function ClassInsightShell(props: Props) {
           </div>
           <div className="text-xs text-slate-500">{breadcrumbsTrail}</div>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-            {quickStats.map((metric) => (
+            {quickStatsToRender.map((metric) => (
               <div key={metric.label} className="rounded-1xl border border-slate-200/80 bg-slate-50/80 p-3">
                 <div className="text-[11px] uppercase tracking-[0.3em] text-slate-500">{metric.label}</div>
                 <div className="mt-2 text-2xl font-semibold text-slate-900">{metric.value}</div>
@@ -1419,4 +1803,3 @@ export default function ClassInsightShell(props: Props) {
     </div>
   )
 }
-
