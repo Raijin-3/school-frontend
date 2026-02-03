@@ -41,3 +41,36 @@ export async function GET(
     return NextResponse.json({ error: "Failed to fetch sections" }, { status: 500 })
   }
 }
+
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ moduleId: string }> }
+) {
+  try {
+    const headers = await getAuthHeaders()
+    const { moduleId } = await params
+    const payload = await request.json()
+    const response = await fetch(
+      `${API_BASE_URL}/v1/teacher/modules/${moduleId}/sections`,
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ title: payload?.title }),
+      }
+    )
+
+    if (!response.ok) {
+      const error = await response.text()
+      return NextResponse.json({ error }, { status: response.status })
+    }
+
+    const data = await response.json()
+    return NextResponse.json(data, { status: response.status })
+  } catch (error) {
+    console.error("Teacher sections creation API error:", error)
+    return NextResponse.json(
+      { error: "Failed to create section" },
+      { status: 500 },
+    )
+  }
+}

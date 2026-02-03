@@ -1,7 +1,7 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { CheckCircle2, ClipboardList, Sparkles } from "lucide-react"
+import { useEffect, useMemo, useState } from "react"
+import { CheckCircle2, ClipboardList, Sparkles, X } from "lucide-react"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import {
@@ -11,6 +11,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { toast } from "sonner"
 
 type ClassRow = {
@@ -34,6 +42,29 @@ type SectionRow = {
   id: string
   title: string
   module_id: string
+  keyconcept?: string[] | null
+}
+
+const KEY_CONCEPT_EXAMPLES = [
+  "Limits & continuity",
+  "Solving linear equations",
+  "Photosynthesis overview",
+  "Probability & chance",
+  "Writing argumentative claims",
+]
+const CREATE_SECTION_VALUE = "__create_new_section__"
+
+function normalizeKeyConcepts(value: SectionRow['keyconcept']): string[] {
+  if (Array.isArray(value)) {
+    return value.filter((item): item is string => typeof item === "string")
+  }
+  if (typeof value === "string") {
+    return value
+      .split(";")
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0)
+  }
+  return []
 }
 
 export type LessonSetupSelection = {
@@ -47,9 +78,14 @@ export type LessonSetupSelection = {
 type LessonSetupWizardProps = {
   onContinue?: (selection: LessonSetupSelection) => void
   onContextChange?: (context: { classId: string; subjectId: string } | null) => void
+  assignedSectionIds?: string[]
 }
 
-export function LessonSetupWizard({ onContinue, onContextChange }: LessonSetupWizardProps) {
+export function LessonSetupWizard({
+  onContinue,
+  onContextChange,
+  assignedSectionIds,
+}: LessonSetupWizardProps) {
   const [classes, setClasses] = useState<ClassRow[]>([])
   const [subjects, setSubjects] = useState<SubjectRow[]>([])
   const [modules, setModules] = useState<ModuleRow[]>([])
@@ -59,8 +95,32 @@ export function LessonSetupWizard({ onContinue, onContextChange }: LessonSetupWi
   const [moduleId, setModuleId] = useState<string>("")
   const [sectionId, setSectionId] = useState<string>("")
   const [dueAt, setDueAt] = useState<string>("")
+  const [sectionMode, setSectionMode] = useState<"existing" | "custom">("existing")
+  const [customSectionName, setCustomSectionName] = useState<string>("")
+  const [isCreatingSection, setIsCreatingSection] = useState<boolean>(false)
+  const [isSectionListOpen, setIsSectionListOpen] = useState(false)
+  const [deletingSectionIds, setDeletingSectionIds] = useState<Set<string>>(new Set())
+  const [sectionKeyConceptInput, setSectionKeyConceptInput] = useState<string>("")
+  const [isSavingKeyConcept, setIsSavingKeyConcept] = useState(false)
 
-  const isComplete = Boolean(classId && subjectId && moduleId && sectionId)
+  const trimmedCustomSectionName = customSectionName.trim()
+  const hasCustomSectionName = trimmedCustomSectionName.length > 0
+  const hasValidSectionSelection =
+    (sectionMode === "existing" && Boolean(sectionId)) ||
+    (sectionMode === "custom" && hasCustomSectionName)
+  const assignedSectionIdsSet = useMemo(
+    () => new Set(assignedSectionIds ?? []),
+    [assignedSectionIds],
+  )
+  const isSectionAlreadyAssigned =
+    sectionMode === "existing" &&
+    sectionId &&
+    assignedSectionIdsSet.has(sectionId)
+  const isComplete =
+    Boolean(classId && subjectId && moduleId && hasValidSectionSelection) &&
+    !isSectionAlreadyAssigned
+  const activeModuleTitle =
+    modules.find((module) => module.id === moduleId)?.title ?? "Selected module"
 
   useEffect(() => {
     const loadClasses = async () => {
@@ -158,13 +218,232 @@ export function LessonSetupWizard({ onContinue, onContextChange }: LessonSetupWi
   }, [moduleId])
 
   useEffect(() => {
+    setIsSectionListOpen(false)
+  }, [moduleId])
+
+  useEffect(() => {
     if (!onContextChange) return
     if (classId && subjectId) {
-      onContextChange({ classId, subjectId })
+      onContextChange({
+        classId,
+        subjectId,
+        moduleId: moduleId || undefined,
+      })
     } else {
       onContextChange(null)
     }
-  }, [classId, subjectId, onContextChange])
+  }, [classId, subjectId, moduleId, onContextChange])
+
+  useEffect(() => {
+    if (sectionMode !== "existing" || !sectionId) {
+      setSectionKeyConceptInput("")
+      return
+    }
+    const section = sections.find((item) => item.id === sectionId)
+    const values = normalizeKeyConcepts(section?.keyconcept)
+    setSectionKeyConceptInput(values.join("; "))
+  }, [sectionId, sectionMode, sections])
+
+  const enterCustomMode = () => {
+    setSectionMode("custom")
+    setSectionId("")
+    setCustomSectionName("")
+    setSectionKeyConceptInput("")
+  }
+
+  const exitCustomMode = () => {
+    setSectionMode("existing")
+    setCustomSectionName("")
+    setSectionKeyConceptInput("")
+  }
+
+  const createSection = async (title: string): Promise<SectionRow | null> => {
+    if (!moduleId) {
+      toast.error("Select a module before adding a section.")
+      return null
+    }
+    const normalizedTitle = title.trim()
+    if (!normalizedTitle) {
+      toast.error("Enter a key concept or section name.")
+      return null
+    }
+    setCustomSectionName(normalizedTitle)
+    const existing = sections.find(
+      (section) =>
+        section.title?.trim().toLowerCase() === normalizedTitle.toLowerCase(),
+    )
+    if (existing) {
+      setSectionId(existing.id)
+      return existing
+    }
+    setIsCreatingSection(true)
+    try {
+      const response = await fetch(
+        `/api/teacher/modules/${moduleId}/sections`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: normalizedTitle }),
+        },
+      )
+      if (!response.ok) {
+        const error = await response.text()
+        throw new Error(error || "Failed to create section")
+      }
+      const createdSection = (await response.json()) as SectionRow
+      setSections((prev) => [
+        createdSection,
+        ...prev.filter((section) => section.id !== createdSection.id),
+      ])
+      setSectionId(createdSection.id)
+      setSectionMode("existing")
+      setCustomSectionName("")
+      toast.success(`Section "${createdSection.title}" has been saved.`)
+      return createdSection
+    } catch (error: any) {
+      toast.error(
+        `Failed to create section: ${error?.message || "Unknown error"}`,
+      )
+      return null
+    } finally {
+      setIsCreatingSection(false)
+    }
+  }
+
+  const handleCreateSectionFromInput = () => {
+    if (!hasCustomSectionName) {
+      toast.error("Enter a key concept or section name.")
+      return
+    }
+    void createSection(trimmedCustomSectionName)
+  }
+
+  const handleQuickExample = (example: string) => {
+    setCustomSectionName(example)
+    void createSection(example)
+  }
+
+  const markSectionDeleting = (sectionIdToUpdate: string, deleting: boolean) => {
+    setDeletingSectionIds((prev) => {
+      const next = new Set(prev)
+      if (deleting) {
+        next.add(sectionIdToUpdate)
+      } else {
+        next.delete(sectionIdToUpdate)
+      }
+      return next
+    })
+  }
+
+  const handleDeleteSection = async (section: SectionRow) => {
+    if (!moduleId || deletingSectionIds.has(section.id)) return
+    if (!confirm(`Delete section "${section.title}"? This cannot be undone.`)) {
+      return
+    }
+    markSectionDeleting(section.id, true)
+    try {
+      const response = await fetch(
+        `/api/teacher/modules/${moduleId}/sections/${section.id}`,
+        {
+          method: "DELETE",
+        },
+      )
+      if (!response.ok) {
+        const errorText = (await response.text()) || "Failed to delete section"
+        throw new Error(errorText)
+      }
+      setSections((prev) => prev.filter((item) => item.id !== section.id))
+      if (sectionId === section.id) {
+        setSectionId("")
+        setSectionMode("existing")
+      }
+      toast.success(`Section "${section.title}" deleted`)
+    } catch (error: any) {
+      toast.error(error?.message || "Failed to delete section")
+    } finally {
+      markSectionDeleting(section.id, false)
+    }
+  }
+
+  const renderExampleButtons = () => (
+    <div className="flex flex-wrap gap-2">
+      {KEY_CONCEPT_EXAMPLES.map((example) => (
+        <Button
+          key={example}
+          variant="outline"
+          size="sm"
+          className="rounded-full px-3 text-[11px] font-semibold uppercase tracking-wide text-slate-600"
+          onClick={() => handleQuickExample(example)}
+          disabled={!moduleId || isCreatingSection}
+        >
+          {example}
+        </Button>
+      ))}
+    </div>
+  )
+
+  const handleSaveKeyConcepts = async () => {
+    if (!moduleId || !sectionId) return
+    const values = sectionKeyConceptInput
+      .split(";")
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0)
+    setIsSavingKeyConcept(true)
+    try {
+      const response = await fetch(
+        `/api/teacher/modules/${moduleId}/sections/${sectionId}/key-concept`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ keyconcept: values }),
+        },
+      )
+      if (!response.ok) {
+        const errorText = (await response.text()) || "Failed to save key concepts"
+        throw new Error(errorText)
+      }
+      setSections((prev) =>
+        prev.map((section) =>
+          section.id === sectionId ? { ...section, keyconcept: values } : section,
+        ),
+      )
+      toast.success("Key concepts saved")
+    } catch (error: any) {
+      toast.error(error?.message || "Failed to save key concepts")
+    } finally {
+      setIsSavingKeyConcept(false)
+    }
+  }
+
+  const handleContinue = async () => {
+    if (!classId || !subjectId || !moduleId) return
+    let resolvedSectionId = sectionId
+    if (sectionMode === "custom" && !resolvedSectionId && hasCustomSectionName) {
+      const created = await createSection(trimmedCustomSectionName)
+      if (!created?.id) {
+        return
+      }
+      resolvedSectionId = created.id
+    }
+
+    if (!resolvedSectionId) return
+    if (
+      sectionMode === "existing" &&
+      assignedSectionIdsSet.has(resolvedSectionId)
+    ) {
+      toast.error(
+        "This section already has a lesson assigned for the selected class and subject.",
+      )
+      return
+    }
+    onContinue?.({
+      classId,
+      subjectId,
+      moduleId,
+      sectionId: resolvedSectionId,
+      dueAt: dueAt || null,
+    })
+  }
 
   return (
     <div className="rounded-2xl border border-slate-200/80 border-l-4 border-l-slate-900 bg-white p-6 shadow-sm">
@@ -200,6 +479,9 @@ export function LessonSetupWizard({ onContinue, onContextChange }: LessonSetupWi
                 setSubjectId("")
                 setModuleId("")
                 setSectionId("")
+                setCustomSectionName("")
+                setSectionMode("existing")
+                setSectionKeyConceptInput("")
               }}
             >
               <SelectTrigger className="h-11 rounded-xl border-slate-200 bg-white shadow-xs">
@@ -223,6 +505,9 @@ export function LessonSetupWizard({ onContinue, onContextChange }: LessonSetupWi
                 setSubjectId(value)
                 setModuleId("")
                 setSectionId("")
+                setCustomSectionName("")
+                setSectionMode("existing")
+                setSectionKeyConceptInput("")
               }}
               disabled={!classId}
             >
@@ -241,13 +526,28 @@ export function LessonSetupWizard({ onContinue, onContextChange }: LessonSetupWi
         </div>
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <div className="space-y-2">
+        <div className="space-y-2">
+          <div className="flex items-center justify-between gap-2">
             <Label className="text-sm font-semibold text-slate-700">Module</Label>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setIsSectionListOpen(true)}
+              disabled={!moduleId}
+              className="rounded-full px-3 tracking-wide text-slate-600"
+            >
+              All sections
+            </Button>
+          </div>
             <Select
               value={moduleId}
               onValueChange={(value) => {
                 setModuleId(value)
                 setSectionId("")
+                setCustomSectionName("")
+                setSectionMode("existing")
+                setSectionKeyConceptInput("")
               }}
               disabled={!subjectId}
             >
@@ -265,19 +565,142 @@ export function LessonSetupWizard({ onContinue, onContextChange }: LessonSetupWi
           </div>
 
           <div className="space-y-2">
-            <Label className="text-sm font-semibold text-slate-700">Section</Label>
-            <Select value={sectionId} onValueChange={setSectionId} disabled={!moduleId}>
-              <SelectTrigger className="h-11 rounded-xl border-slate-200 bg-white shadow-xs">
-                <SelectValue placeholder="Select section" />
-              </SelectTrigger>
-              <SelectContent>
-                {sections.map((section) => (
-                  <SelectItem key={section.id} value={section.id}>
-                    {section.title}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Label className="text-sm font-semibold text-slate-700">
+              Key concept or section
+            </Label>
+            {sectionMode === "existing" ? (
+              <>
+                <Select
+                  value={sectionId}
+                  onValueChange={(value) => {
+                    if (value === CREATE_SECTION_VALUE) {
+                      enterCustomMode()
+                      return
+                    }
+                    setSectionId(value)
+                    setSectionMode("existing")
+                    setCustomSectionName("")
+                  }}
+                  disabled={!moduleId}
+                >
+                  <SelectTrigger className="h-11 rounded-xl border-slate-200 bg-white shadow-xs">
+                    <SelectValue placeholder="Select section" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {sections.map((section) => (
+                      <SelectItem key={section.id} value={section.id}>
+                        {section.title}
+                      </SelectItem>
+                    ))}
+                    {/* {moduleId && (
+                      <SelectItem
+                        value={CREATE_SECTION_VALUE}
+                        className="text-xs font-semibold uppercase tracking-wide text-slate-500"
+                      >
+                        + Type new key concept
+                      </SelectItem>
+                    )} */}
+                  </SelectContent>
+                </Select>
+                {isSectionAlreadyAssigned && (
+                  <p className="text-xs text-rose-500">
+                    This section already has a lesson assigned for the selected class and subject.
+                  </p>
+                )}
+                {!moduleId ? (
+                  <p className="text-xs text-slate-500">
+                    Select a module to list key concepts.
+                  </p>
+                ) : sections.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 p-3 text-xs text-slate-500">
+                    <p>
+                      No sections yet for this module. Use "+ Type new key concept" or tap a suggestion below to create one.
+                    </p>
+                    <div className="mt-3">{renderExampleButtons()}</div>
+                  </div>
+                ) : null}
+              </>
+            ) : (
+              <div className="relative space-y-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                <button
+                  type="button"
+                  className="absolute right-3 top-3 rounded-full border border-slate-200 bg-white p-1 text-slate-500 transition hover:text-slate-700"
+                  onClick={() => {
+                    exitCustomMode()
+                  }}
+                  aria-label="Show existing sections"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+                <input
+                  type="text"
+                  value={customSectionName}
+                  onChange={(event) => {
+                    setCustomSectionName(event.target.value)
+                    setSectionId("")
+                  }}
+                  disabled={!moduleId}
+                  placeholder="e.g., Limits & continuity"
+                  className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 shadow-xs focus:border-slate-300 focus:outline-none disabled:cursor-not-allowed"
+                />
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <span className="text-xs text-slate-500">
+                    Example: {KEY_CONCEPT_EXAMPLES[0]}
+                  </span>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="rounded-2xl px-4 text-xs font-semibold uppercase tracking-wide"
+                    onClick={handleCreateSectionFromInput}
+                    disabled={
+                      !moduleId || !hasCustomSectionName || isCreatingSection
+                    }
+                  >
+                    Save key concept
+                  </Button>
+                </div>
+                <p className="text-xs text-slate-500">
+                  Tap an example below to build a section instantly.
+                </p>
+                {renderExampleButtons()}
+                {!moduleId && (
+                  <p className="text-xs text-rose-500">
+                    Select a module to record a new key concept.
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-2 keyconp">
+            {moduleId && sectionId && sectionMode === "existing" && (
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold text-slate-700">
+                  Key Concept
+                </Label>
+                <textarea
+                  value={sectionKeyConceptInput}
+                  onChange={(event) => setSectionKeyConceptInput(event.target.value)}
+                  disabled={!sectionId || !moduleId || isSavingKeyConcept}
+                  placeholder="Enter key concepts and separate each with a semicolon."
+                  className="min-h-[96px] w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-xs focus:border-slate-300 focus:outline-none disabled:cursor-not-allowed"
+                />
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="rounded-2xl px-4 text-xs font-semibold uppercase tracking-wide"
+                    onClick={handleSaveKeyConcepts}
+                    disabled={!sectionId || !moduleId || isSavingKeyConcept}
+                  >
+                    {isSavingKeyConcept ? "Saving key concepts…" : "Save key concepts"}
+                  </Button>
+                  <p className="text-xs text-slate-500">
+                    Separate each key concept with a semicolon.
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="space-y-2">
@@ -308,16 +731,53 @@ export function LessonSetupWizard({ onContinue, onContextChange }: LessonSetupWi
         <Button
           type="button"
           className="h-11 rounded-xl bg-slate-900 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
-          disabled={!isComplete}
-          onClick={() => {
-            if (isComplete) {
-              onContinue?.({ classId, subjectId, moduleId, sectionId, dueAt: dueAt || null })
-            }
-          }}
+          disabled={!isComplete || isCreatingSection}
+          onClick={handleContinue}
         >
           Continue to Lesson Builder
         </Button>
       </div>
+
+      <Dialog open={isSectionListOpen} onOpenChange={setIsSectionListOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{activeModuleTitle} sections</DialogTitle>
+            <DialogDescription>
+              Review or remove sections for the module you selected.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex max-h-[60vh] flex-col gap-3 overflow-y-auto">
+            {sections.length === 0 ? (
+              <p className="text-sm text-slate-500">
+                No sections have been created for this module yet.
+              </p>
+            ) : (
+              sections.map((section) => (
+                <div
+                  key={section.id}
+                  className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3 text-sm text-slate-600"
+                >
+                  <span className="font-medium text-slate-900">{section.title}</span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleDeleteSection(section)}
+                    disabled={deletingSectionIds.has(section.id)}
+                  >
+                    {deletingSectionIds.has(section.id) ? "Deleting…" : "Delete"}
+                  </Button>
+                </div>
+              ))
+            )}
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setIsSectionListOpen(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

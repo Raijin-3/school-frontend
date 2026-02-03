@@ -8,10 +8,13 @@ import { AiPermissionsCard, type LessonToolConfig } from "@/components/teacher/a
 type WizardStep = 1 | 2
 
 type LessonWizardProps = {
-  onContextChange?: (context: { classId: string; subjectId: string } | null) => void
+  onContextChange?: (
+    context: { classId: string; subjectId: string; moduleId?: string } | null,
+  ) => void
+  assignedSectionIds?: string[]
 }
 
-export function LessonWizard({ onContextChange }: LessonWizardProps) {
+export function LessonWizard({ onContextChange, assignedSectionIds }: LessonWizardProps) {
   const [step, setStep] = useState<WizardStep>(1)
   const [selection, setSelection] = useState<LessonSetupSelection | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -56,13 +59,14 @@ export function LessonWizard({ onContextChange }: LessonWizardProps) {
   return (
     <div className="space-y-5">
       {step === 1 && (
-        <LessonSetupWizard
-          onContinue={(nextSelection) => {
-            setSelection(nextSelection)
-            setStep(2)
-          }}
-          onContextChange={onContextChange}
-        />
+      <LessonSetupWizard
+        onContinue={(nextSelection) => {
+          setSelection(nextSelection)
+          setStep(2)
+        }}
+        onContextChange={onContextChange}
+        assignedSectionIds={assignedSectionIds}
+      />
       )}
       {step === 2 && (
         <AiPermissionsCard
