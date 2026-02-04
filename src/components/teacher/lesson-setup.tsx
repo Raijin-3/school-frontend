@@ -54,7 +54,7 @@ const KEY_CONCEPT_EXAMPLES = [
 ]
 const CREATE_SECTION_VALUE = "__create_new_section__"
 
-function normalizeKeyConcepts(value: SectionRow['keyconcept']): string[] {
+function normalizeKeyConcepts(value?: SectionRow["keyconcept"] | string | null): string[] {
   if (Array.isArray(value)) {
     return value.filter((item): item is string => typeof item === "string")
   }
@@ -65,6 +65,26 @@ function normalizeKeyConcepts(value: SectionRow['keyconcept']): string[] {
       .filter((entry) => entry.length > 0)
   }
   return []
+}
+
+function buildSectionTitlePrefix(sectionTitle?: string) {
+  const trimmed = sectionTitle?.trim()
+  return trimmed ? `${trimmed} - ` : ""
+}
+
+function buildDisplayKeyConcepts(prefix: string, concepts: string[]) {
+  const body = concepts.join("; ")
+  if (!prefix) return body
+  if (!body) return prefix
+  return `${prefix}${body}`
+}
+
+function ensurePrefixedWithSectionTitle(value: string, sectionTitle?: string) {
+  const trimmedValue = value.trim()
+  if (!trimmedValue) return ""
+  const prefix = buildSectionTitlePrefix(sectionTitle)
+  if (!prefix) return trimmedValue
+  return trimmedValue.startsWith(prefix) ? trimmedValue : `${prefix}${trimmedValue}`
 }
 
 export type LessonSetupSelection = {
@@ -240,8 +260,41 @@ export function LessonSetupWizard({
       return
     }
     const section = sections.find((item) => item.id === sectionId)
-    const values = normalizeKeyConcepts(section?.keyconcept)
-    setSectionKeyConceptInput(values.join("; "))
+    const fallbackValues = normalizeKeyConcepts(section?.keyconcept)
+    const prefix = buildSectionTitlePrefix(section?.title)
+    let fallbackDisplay = fallbackValues.join("; ")
+    if (fallbackDisplay && prefix && !fallbackDisplay.startsWith(prefix)) {
+      fallbackDisplay = buildDisplayKeyConcepts(prefix, fallbackValues)
+    }
+    setSectionKeyConceptInput(fallbackDisplay)
+
+    let isActive = true
+    const loadKeyConcepts = async () => {
+      try {
+        const response = await fetch(`/api/teacher/sections/${sectionId}/keyconcept`)
+        if (!response.ok) {
+          const error = await response.text()
+          throw new Error(error || "Failed to load key concepts")
+        }
+        const payload = (await response.json()) as {
+          keyconcept?: string[] | string | null
+        }
+        const values = normalizeKeyConcepts(payload?.keyconcept ?? [])
+        if (isActive) {
+          let display = values.join("; ")
+          if (display && prefix && !display.startsWith(prefix)) {
+            display = buildDisplayKeyConcepts(prefix, values)
+          }
+          setSectionKeyConceptInput(display)
+        }
+      } catch (error) {
+        console.error("Failed to fetch key concepts for section:", error)
+      }
+    }
+    loadKeyConcepts()
+    return () => {
+      isActive = false
+    }
   }, [sectionId, sectionMode, sections])
 
   const enterCustomMode = () => {
@@ -384,10 +437,12 @@ export function LessonSetupWizard({
 
   const handleSaveKeyConcepts = async () => {
     if (!moduleId || !sectionId) return
-    const values = sectionKeyConceptInput
-      .split(";")
-      .map((entry) => entry.trim())
-      .filter((entry) => entry.length > 0)
+    const section = sections.find((item) => item.id === sectionId)
+    const finalValue = ensurePrefixedWithSectionTitle(
+      sectionKeyConceptInput,
+      section?.title,
+    )
+    const values = finalValue ? [finalValue] : [] // store as single entry
     setIsSavingKeyConcept(true)
     try {
       const response = await fetch(

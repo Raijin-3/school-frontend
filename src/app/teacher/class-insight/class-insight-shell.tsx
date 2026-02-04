@@ -9,6 +9,7 @@ import type {
   AiUsageSegment,
   ClassGroup,
   FocusGroup,
+  FocusGroupTableRow,
   MasteryTile,
   ModuleInsight,
   ModuleStudentSection,
@@ -22,6 +23,56 @@ import type {
 const statusToneClasses: Record<"Completed" | "In progress", string> = {
   Completed: "text-emerald-600",
   "In progress": "text-amber-500",
+}
+
+const HIDDEN_FOCUS_GROUP_TITLES = new Set(["Ready for Extension", "Incomplete Objectives"])
+
+const describeSectionTitle = (sectionTitle?: string) => sectionTitle ?? "this section"
+
+type FocusGroupAction = {
+  label: string
+  buildMessage: (sectionTitle?: string, context?: { classTiming?: string }) => string
+  requiresTiming?: boolean
+  timingPrompt?: string
+  needsRevisionNotes?: boolean
+}
+
+const FOCUS_GROUP_ACTIONS: FocusGroupAction[] = [
+  {
+    label: "Revision notes on weak areas.",
+    buildMessage: (sectionTitle?: string) =>
+      "Revision notes on " + describeSectionTitle(sectionTitle) + " are ready - review them to shore up the weak areas.",
+    needsRevisionNotes: true,
+  },
+  {
+    label: "Weakness Practice Quiz.",
+    buildMessage: (sectionTitle?: string) =>
+      "A weakness practice quiz for " + describeSectionTitle(sectionTitle) + " is queued so you can boost that section.",
+  },
+  {
+    label: "Extra class.",
+    requiresTiming: true,
+    timingPrompt: "When is the extra class scheduled (e.g., Monday at 4:00 PM)?",
+    buildMessage: (sectionTitle?: string, context?: { classTiming?: string }) => {
+      const timingSuffix = context?.classTiming ? " at " + context.classTiming : ""
+      return "To improve " + describeSectionTitle(sectionTitle) + ", your teacher will take an extra class" + timingSuffix + " - please be ready."
+    },
+  },
+]
+
+
+type SectionBucket = {
+  id: string
+  sectionTitle: string
+  students: FocusGroupTableRow[]
+  averageScore: number | null
+  hintsTotal: number
+}
+
+type SectionActionEntry = {
+  label: string
+  message: string
+  timestamp: string
 }
 
 type Props = {
@@ -79,6 +130,31 @@ const sectionStackColors: Record<
   notStarted: "#cbd5f5",
 }
 
+type ScoreTone = "strong" | "average" | "weak" | "notStarted"
+
+const getScoreTone = (score: number | null | undefined): ScoreTone => {
+  if (score === null || score === undefined) {
+    return "notStarted"
+  }
+  if (score >= 80) return "strong"
+  if (score >= 50) return "average"
+  return "weak"
+}
+
+const studentToneBorderClasses: Record<ScoreTone, string> = {
+  strong: "border-emerald-300",
+  average: "border-amber-300",
+  weak: "border-rose-300",
+  notStarted: "border-slate-200",
+}
+
+const sectionToneBorderClasses: Record<ScoreTone, string> = {
+  strong: "border-emerald-300",
+  average: "border-amber-300",
+  weak: "border-rose-300",
+  notStarted: "border-slate-200",
+}
+
 const strugglingActionCopy: Record<StrugglingActionType, { label: string; description: string }> = {
   concept: {
     label: "Concept-clearing AI notes/chat",
@@ -100,6 +176,13 @@ const sectionToneLabels: Record<
   average: "Average",
   weak: "Weak",
   notStarted: "Not started",
+}
+
+const formatTimestamp = (value?: string) => {
+  if (!value) return ""
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ""
+  return date.toLocaleString()
 }
 
 const assignmentBadgeClasses = {
@@ -211,15 +294,6 @@ function buildSectionProgressSummaries(
   return order.map((id) => sectionMap.get(id)!)
 }
 
-const getScoreTone = (score: number | null) => {
-  if (score === null || score === undefined) {
-    return "notStarted" as const
-  }
-  if (score >= 80) return "strong" as const
-  if (score >= 50) return "average" as const
-  return "weak" as const
-}
-
 export default function ClassInsightShell(props: Props) {
   const {
     classGroups,
@@ -274,14 +348,62 @@ export default function ClassInsightShell(props: Props) {
         )
       }
     })
-    return cards
+      return cards
   }, [quickStats, subjectCompletionPercent, subjectAverageScore])
+  const visibleFocusGroups = focusGroups.filter(
+    (group) => !HIDDEN_FOCUS_GROUP_TITLES.has(group.title),
+  )
+  const [sectionActionLoading, setSectionActionLoading] = useState<Record<string, boolean>>({})
+  const [selectedBucketIds, setSelectedBucketIds] = useState<Record<string, string | null>>({})
+  const focusGroupSectionBuckets = useMemo(() => {
+    return visibleFocusGroups.reduce<Record<string, SectionBucket[]>>((acc, group) => {
+      const rows = group.tableRows ?? []
+      type BucketAccumulator = {
+        id: string
+        sectionTitle: string
+        students: FocusGroupTableRow[]
+        scoreSum: number
+        scoreCount: number
+        hintsTotal: number
+      }
+      const bucketMap = new Map<string, BucketAccumulator>()
+      for (const row of rows) {
+        const key = row.section_id ?? row.section_title ?? "Overall"
+        const sectionTitle = row.section_title ?? "Overall"
+        if (!bucketMap.has(key)) {
+          bucketMap.set(key, {
+            id: key,
+            sectionTitle,
+            students: [],
+            scoreSum: 0,
+            scoreCount: 0,
+            hintsTotal: 0,
+          })
+        }
+        const bucket = bucketMap.get(key)!
+        bucket.students.push(row)
+        if (typeof row.section_score === "number") {
+          bucket.scoreSum += row.section_score
+          bucket.scoreCount += 1
+        }
+        bucket.hintsTotal += row.hints ?? 0
+      }
+      acc[group.title] = Array.from(bucketMap.values()).map((bucket) => ({
+        id: bucket.id,
+        sectionTitle: bucket.sectionTitle,
+        students: bucket.students,
+        hintsTotal: bucket.hintsTotal,
+        averageScore: bucket.scoreCount ? Math.round(bucket.scoreSum / bucket.scoreCount) : null,
+      }))
+      return acc
+    }, {})
+  }, [visibleFocusGroups])
   const [activeTile, setActiveTile] = useState<MasteryTile | null>(null)
   const [expandedStudentId, setExpandedStudentId] = useState<string | null>(null)
   const [sectionProgressModule, setSectionProgressModule] = useState<MasteryTile | null>(null)
   const [openSectionId, setOpenSectionId] = useState<string | null>(null)
   const [openFocusGroup, setOpenFocusGroup] = useState<string | null>(
-    focusGroups[0]?.title ?? null,
+    visibleFocusGroups[0]?.title ?? null,
   )
   const [studentSectionsCache, setStudentSectionsCache] = useState<
     Record<string, Record<string, ModuleStudentSection[]>>
@@ -291,7 +413,25 @@ export default function ClassInsightShell(props: Props) {
   const [assignmentHistory, setAssignmentHistory] = useState<Record<string, string>>({})
   const [focusGroupActionHistory, setFocusGroupActionHistory] = useState<Record<string, string>>({})
   const [studentActionHistory, setStudentActionHistory] = useState<Record<string, string>>({})
+  const [sectionActionLog, setSectionActionLog] = useState<Record<string, SectionActionEntry[]>>({})
+  const [actionLogBucketId, setActionLogBucketId] = useState<string | null>(null)
+  const [actionHistoryLoadingFor, setActionHistoryLoadingFor] = useState<string | null>(null)
+  const actionBucketsFetchedRef = useRef(new Set<string>())
   const totalAiUsage = aiUsage.reduce((sum, segment) => sum + segment.value, 0)
+
+  const sectionTitleByBucketId = useMemo(() => {
+    const map: Record<string, string> = {}
+    Object.values(focusGroupSectionBuckets).forEach((buckets) => {
+      buckets.forEach((bucket) => {
+        map[bucket.id] = bucket.sectionTitle
+      })
+    })
+    return map
+  }, [focusGroupSectionBuckets])
+
+  const actionLogBucketTitle = actionLogBucketId
+    ? sectionTitleByBucketId[actionLogBucketId] ?? actionLogBucketId
+    : null
 
   const handleStrugglingAction = useCallback(
     (tile: MasteryTile, action: StrugglingActionType) => {
@@ -325,6 +465,224 @@ export default function ClassInsightShell(props: Props) {
       const message = `${actionCopy.label} assigned for ${groupTitle}`
       setFocusGroupActionHistory((prev) => ({ ...prev, [groupTitle]: message }))
       toast.success(message)
+    },
+    [],
+  )
+
+  const generateRevisionNotes = useCallback(
+    async (bucket: SectionBucket) => {
+      const sectionId =
+        bucket.students.map((student) => student.section_id).find(Boolean) ?? null
+      if (!sectionId) {
+        throw new Error("Section ID is missing for revision notes.")
+      }
+      const studentIds = Array.from(
+        new Set(
+          bucket.students
+            .map((student) => student.student_id)
+            .filter((id): id is string => Boolean(id)),
+        ),
+      )
+      if (!studentIds.length) {
+        throw new Error("No students selected for revision notes.")
+      }
+
+      let fetchedKeyconcept: string[] | string | null = null
+      if (sectionId) {
+        try {
+          const keyResponse = await fetch(
+            `/api/teacher/sections/${sectionId}/keyconcept`,
+          )
+          if (keyResponse.ok) {
+            const keyData = (await keyResponse.json()) as { keyconcept?: string[] | string | null }
+            fetchedKeyconcept = keyData?.keyconcept ?? null
+          } else {
+            console.warn("Failed to load keyconcept before revision notes")
+          }
+        } catch (error) {
+          console.error("Error fetching keyconcept before revision notes:", error)
+        }
+      }
+
+      const response = await fetch("/api/teacher/revision-notes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sectionId,
+          sectionTitle: bucket.sectionTitle,
+          classId: selectedClassId,
+          className: selectedClassName,
+          classYear: selectedClassYear,
+          subjectId: selectedSubjectId,
+          subjectName: selectedSubjectName,
+          studentIds,
+          keyconcept: fetchedKeyconcept,
+        }),
+      })
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw new Error(errorText || "Failed to generate revision notes.")
+      }
+
+      const data = (await response.json()) as { notes?: string }
+      if (!data?.notes) {
+        throw new Error("Revision notes service did not return any notes.")
+      }
+
+      return data.notes.trim()
+    },
+    [
+      selectedClassId,
+      selectedClassName,
+      selectedClassYear,
+      selectedSubjectId,
+      selectedSubjectName,
+    ],
+  )
+
+  const fetchSectionHistory = useCallback(
+    async (bucketKey: string, sectionId: string | null) => {
+      if (!sectionId || !selectedClassId) {
+        setSectionActionLog((prev) => ({ ...prev, [bucketKey]: [] }))
+        return
+      }
+      setActionHistoryLoadingFor(bucketKey)
+      try {
+        const query = new URLSearchParams({ class_id: selectedClassId })
+        console.log(
+          "[Section history request]",
+          "bucketKey:",
+          bucketKey,
+          "sectionId:",
+          sectionId,
+          "classId:",
+          selectedClassId,
+        )
+        const response = await fetch(
+          `/api/teacher/sections/${sectionId}/actions?${query.toString()}`,
+        )
+        if (!response.ok) {
+          const text = await response.text()
+          throw new Error(text || "Failed to load action history")
+        }
+        const data = (await response.json()) as { actions?: SectionActionEntry[] }
+        const sortedActions = (data.actions ?? []).sort(
+          (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
+        )
+        setSectionActionLog((prev) => ({
+          ...prev,
+          [bucketKey]: sortedActions,
+        }))
+      } catch (error) {
+        console.error("Action history fetch failed:", error)
+        toast.error(
+          error instanceof Error ? error.message : "Failed to load action history",
+        )
+      } finally {
+        setActionHistoryLoadingFor((current) => (current === bucketKey ? null : current))
+      }
+    },
+    [selectedClassId],
+  )
+
+  useEffect(() => {
+    actionBucketsFetchedRef.current.clear()
+  }, [selectedClassId])
+
+  useEffect(() => {
+    if (!selectedClassId) {
+      return
+    }
+    Object.values(focusGroupSectionBuckets).forEach((buckets) => {
+      buckets.forEach((bucket) => {
+        if (actionBucketsFetchedRef.current.has(bucket.id)) {
+          return
+        }
+        const sectionId =
+          bucket.students.map((row) => row.section_id).find(Boolean) ?? null
+        if (!sectionId) {
+          return
+        }
+        actionBucketsFetchedRef.current.add(bucket.id)
+        void fetchSectionHistory(bucket.id, sectionId)
+      })
+    })
+  }, [selectedClassId, focusGroupSectionBuckets, fetchSectionHistory])
+
+  const handleBucketSelect = useCallback((groupTitle: string, bucketId: string) => {
+    setSelectedBucketIds((prev) => ({ ...prev, [groupTitle]: bucketId }))
+  }, [])
+
+  const handleSectionAction = useCallback(
+    async (
+      groupTitle: string,
+      bucket: SectionBucket,
+      actionLabel: string,
+      actionMessage: string,
+      needsRevisionNotes?: boolean,
+      classTiming?: string,
+    ) => {
+      const actionKey = `${groupTitle}-${bucket.id}-${actionLabel}`
+      setSectionActionLoading((prev) => ({ ...prev, [actionKey]: true }))
+      try {
+        let messageToSend = actionMessage
+        if (needsRevisionNotes) {
+          const revisionNotes = await generateRevisionNotes(bucket)
+          messageToSend = `${actionMessage}\n\nRevision notes:\n${revisionNotes}`
+        }
+
+        const items = bucket.students
+          .filter((row) => Boolean(row.student_id))
+          .map((row) => ({
+            studentId: row.student_id,
+            sectionId: row.section_id ?? null,
+          }))
+
+        if (!items.length) {
+          throw new Error("No students selected")
+        }
+
+        const response = await fetch("/api/teacher/student-notifications", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            items,
+            actionLabel,
+            message: messageToSend,
+            sectionTitle: bucket.sectionTitle,
+            classTiming: classTiming ?? undefined,
+          }),
+        })
+
+        if (!response.ok) {
+          const errorText = await response.text()
+          throw new Error(errorText || "Failed to send notifications")
+        }
+
+        const successMessage = `${actionLabel} notification sent to ${items.length} student${items.length === 1 ? "" : "s"}`
+        setFocusGroupActionHistory((prev) => ({ ...prev, [groupTitle]: successMessage }))
+        const entry: SectionActionEntry = {
+          label: actionLabel,
+          message: messageToSend,
+          timestamp: new Date().toISOString(),
+        }
+        setSectionActionLog((prev) => {
+          const previous = prev[bucket.id] ?? []
+          return { ...prev, [bucket.id]: [...previous, entry] }
+        })
+        toast.success(successMessage)
+      } catch (error) {
+        console.error("Focus group action error:", error)
+        const message =
+          error instanceof Error ? error.message : "Failed to send notification; try again."
+        toast.error(message)
+      } finally {
+        setSectionActionLoading((prev) => {
+          const { [actionKey]: _, ...rest } = prev
+          return { ...rest, [actionKey]: false }
+        })
+      }
     },
     [],
   )
@@ -424,18 +782,18 @@ export default function ClassInsightShell(props: Props) {
   }, [activeTile])
 
   useEffect(() => {
-    if (!focusGroups.length) {
+    if (!visibleFocusGroups.length) {
       setOpenFocusGroup(null)
       return
     }
 
     setOpenFocusGroup((prev) => {
-      if (prev && focusGroups.some((group) => group.title === prev)) {
+      if (prev && visibleFocusGroups.some((group) => group.title === prev)) {
         return prev
       }
-      return focusGroups[0].title
+      return visibleFocusGroups[0].title
     })
-  }, [focusGroups])
+  }, [visibleFocusGroups])
 
   useEffect(() => {
     if (!sectionProgressModule) {
@@ -555,13 +913,13 @@ export default function ClassInsightShell(props: Props) {
 
   const simpleFocusPreview = useMemo(
     () =>
-      focusGroups.slice(0, 2).map((group) => ({
+      visibleFocusGroups.slice(0, 2).map((group) => ({
         title: group.title,
         description: group.description,
         students: group.items.slice(0, 2),
         totalStudents: group.items.length,
       })),
-    [focusGroups],
+    [visibleFocusGroups],
   )
 
   const masteryTableRows = useMemo(
@@ -661,19 +1019,19 @@ export default function ClassInsightShell(props: Props) {
                           <p className="text-[11px] text-slate-500">Students struggling</p>
                         </td>
                         <td className="px-4  text-center py-3">
-                          {/* <button
+                          <button
                             type="button"
                             onClick={() => setActiveTile(tile)}
-                            className="inline-flex items-center justify-center rounded-full border border-transparent px-4 py-1 text-[11px] font-semibold uppercase tracking-[0.1em] text-white transition shadow-lg hover:shadow-xl"
+                            className="inline-flex items-center justify-center rounded-full border border-transparent px-5 py-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-white transition shadow-lg hover:shadow-xl"
                             style={{ background: "linear-gradient(90deg, #ad46ff 0%, #615fff 100%)" }}
                             aria-label={`Open ${tile.topic} student insight`}
                           >
                             Students insight
-                          </button> */}
+                          </button>
                           <button
                             type="button"
                             onClick={() => handleSectionProgressOpen(tile)}
-                            style={{ background: "linear-gradient(90deg, #ad46ff 0%, #615fff 100%)" }}
+                            style={{ background: "linear-gradient(90deg, #6214b6 0%, #3a0656 100%)" }}
                             className="mt-3 inline-flex items-center justify-center text-white rounded-full border border-slate-200 px-5 py-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-sky-500 transition hover:border-sky-400 hover:text-sky-700"
                             aria-label={`Open section progress for ${tile.topic}`}
                           >
@@ -1196,6 +1554,72 @@ export default function ClassInsightShell(props: Props) {
             </div>
           </div>
         </div>
+        {actionLogBucketId && (
+          <>
+            <div
+              className="fixed inset-0 z-50 bg-black/40"
+              onClick={() => {
+                setActionLogBucketId(null)
+                setActionHistoryLoadingFor(null)
+              }}
+            />
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+              <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-semibold text-slate-900">Action history</h3>
+                </div>
+                <p className="text-xs text-slate-500">
+                  Showing actions for {actionLogBucketTitle ?? "this section"}
+                </p>
+                <div className="mt-4 space-y-3 max-h-96 overflow-y-auto">
+                  {(() => {
+                    const entries = actionLogBucketId
+                      ? sectionActionLog[actionLogBucketId] ?? []
+                      : []
+                    const loading = actionHistoryLoadingFor === actionLogBucketId
+                    if (loading && !entries.length) {
+                      return <p className="text-sm text-slate-500">Loading actions…</p>
+                    }
+                    if (!entries.length) {
+                      return (
+                        <p className="text-sm text-slate-500">
+                          No actions recorded for this section yet.
+                        </p>
+                      )
+                    }
+                    return entries.map((entry) => (
+                      <div key={entry.timestamp} className="rounded-2xl border border-slate-200 p-3">
+                        <p className="text-sm font-semibold text-slate-900">{entry.label}</p>
+                        <p className="text-xs text-slate-500 mb-2">{formatTimestamp(entry.timestamp)}</p>
+                        <div className="space-y-2 text-sm text-slate-700">
+                          {entry.message
+                            .split("\n")
+                            .map((line) => line.trim())
+                            .filter(Boolean)
+                            .map((line, index) => (
+                              <p key={index}>{line}</p>
+                            ))}
+                        </div>
+                      </div>
+                    ))
+                  })()}
+                </div>
+                <div className="mt-4 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActionLogBucketId(null)
+                      setActionHistoryLoadingFor(null)
+                    }}
+                    className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
       <div className="grid gap-6 lg:grid-cols-1">
@@ -1208,12 +1632,23 @@ export default function ClassInsightShell(props: Props) {
             <span className="text-xs text-slate-500">Prioritized for action</span>
           </div>
           <div className="mt-4 space-y-3">
-            {focusGroups.length ? (
-              focusGroups.map((group) => {
+            {visibleFocusGroups.length ? (
+              visibleFocusGroups.map((group) => {
                 const isOpen = openFocusGroup === group.title
                 const containerClass = isOpen
                   ? "border-slate-300 bg-slate-50"
                   : "border-slate-200 bg-white"
+                const sectionBuckets = focusGroupSectionBuckets[group.title] ?? []
+                const studentCount = Array.from(
+                  new Set((group.tableRows ?? []).map((row) => row.student_id)),
+                ).length
+                const totalEntries = group.tableRows?.length ?? 0
+                const selectedBucketIdForGroup =
+                  selectedBucketIds[group.title] ?? sectionBuckets[0]?.id ?? null
+                const targetBucket =
+                  sectionBuckets.find((bucket) => bucket.id === selectedBucketIdForGroup) ??
+                  sectionBuckets[0] ??
+                  null
                 return (
                   <div
                     key={group.title}
@@ -1241,174 +1676,187 @@ export default function ClassInsightShell(props: Props) {
                         id={`focus-${group.title}`}
                         className="space-y-4 border-t border-slate-200/80 px-5 py-4 text-sm text-slate-500"
                       >
-                        {group.title === "Stuck Students" ? (
-                          <div className="space-y-4">
-                            <div className="rounded-2xl border border-slate-100 bg-slate-50/80 p-4 shadow-sm">
-                              <div className="flex items-start justify-between gap-4">
-                                <div>
-                                  <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Stuck students</p>
-                                  <p className="text-sm font-semibold text-slate-900">Weak sections needing attention</p>
-                                  <p className="text-xs text-slate-500">
-                                    Students whose mastery is below 50% appear below; each row shows the section score that dipped under the threshold.
-                                  </p>
-                                </div>
-                                <div className="text-right text-xs text-slate-500">
-                                  {Array.from(new Set((group.tableRows ?? []).map((row) => row.student_id))).length} students · {(group.tableRows ?? []).length} weak entries
-                                </div>
+                        <div className="space-y-4">
+                          <div className="rounded-2xl border border-slate-100 bg-slate-50/80 p-4 shadow-sm">
+                            <div className="flex items-start justify-between gap-4">
+                              <div>
+                                <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Stuck students</p>
+                                <p className="text-sm font-semibold text-slate-900">Weak sections needing attention</p>
+                                <p className="text-xs text-slate-500">
+                                  Students whose mastery is below 50% appear below; each section groups students falling short together.
+                                </p>
+                              </div>
+                              <div className="text-right text-xs text-slate-500">
+                                {studentCount} students - {totalEntries} weak entries
                               </div>
                             </div>
-                            {(group.tableRows ?? []).length ? (
-                              <div className="overflow-x-auto rounded-2xl border border-slate-100 bg-white p-2 shadow-sm">
-                                <table className="min-w-full text-[11px]">
-                                  <thead>
-                                    <tr className="text-[12px] uppercase tracking-[0.2em] text-slate-500">
-                                      <th className="px-2 py-2 text-left">Student</th>
-                                      <th className="px-2 py-2 text-left">Section</th>
-                                      <th className="px-2 py-2 text-center">Score</th>
-                                      <th className="px-2 py-2 text-center">Hints</th>
-                                      <th className="px-2 py-2 text-center">Action</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody className="divide-y divide-slate-100 text-slate-700">
-                                    {group.tableRows.map((row, index) => {
-                                      const sectionTitle = row.section_title ?? "Overall"
-                                      const scoreLabel =
-                                        row.section_score !== null && row.section_score !== undefined
-                                          ? `${Math.round(row.section_score)}%`
-                                          : "--"
-                                      const sectionActionId = row.section_id ?? sectionTitle
-                                      const actionHistoryKey = `${sectionActionId}-${row.student_id}`
-                                      const lastAction = studentActionHistory[actionHistoryKey]
-                                      return (
-                                        <tr className="text-[12px]" key={`${row.student_id}-${index}-${sectionTitle}`}>
-                                          <td className="px-2 py-2">
-                                            <p className="font-semibold text-slate-900">{row.student_name}</p>
-                                          </td>
-                                          <td className="px-2 py-2">{sectionTitle}</td>
-                                          <td className="px-2 py-2 text-center font-semibold text-rose-600">{scoreLabel}</td>
-                                          <td className="px-2 py-2 text-center">{row.hints ?? "--"}</td>
-                                          <td className="px-2 py-2 text-center align-top">
-                                            <div className="space-y-2">
-                                              <div className="flex-wrap gap-3">
-                                                {strugglingActionTypes.map((actionType) => (
-                                                  <button
-                                                    key={actionType}
-                                                    type="button"
-                                                    onClick={() =>
-                                                      handleStudentAction(
-                                                        sectionActionId,
-                                                        row.student_id,
-                                                        row.student_name,
-                                                        actionType,
-                                                      )
-                                                    }
-                                                    className="text-left rounded-2xl border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold text-slate-900 transition hover:border-slate-300"
-                                                  >
-                                                    <span className="block text-[11px]">{strugglingActionCopy[actionType].label}</span>
-                                                    <span className="text-[9px] font-normal text-slate-500">
-                                                      {strugglingActionCopy[actionType].description}
-                                                    </span>
-                                                  </button>
-                                                ))}
-                                              </div>
-                                              {lastAction && (
-                                                <p className="text-[10px] text-slate-500">Last action: {lastAction}</p>
-                                              )}
+                          </div>
+                          {sectionBuckets.length ? (
+                            <div className="space-y-3">
+                              {sectionBuckets.map((bucket) => {
+                                const isSelected = bucket.id === selectedBucketIdForGroup
+                                const bucketClass = isSelected
+                                  ? "border-emerald-300 bg-emerald-50"
+                                  : "border-slate-100 bg-white"
+                                return (
+                                  <div
+                                    key={bucket.id}
+                                    role="button"
+                                    tabIndex={0}
+                                    onClick={() => handleBucketSelect(group.title, bucket.id)}
+                                    className={`rounded-2xl border ${bucketClass} p-4 shadow-sm focus-visible:ring-2 focus-visible:ring-emerald-200`}
+                                  >
+                                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                                      <div>
+                                        <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">
+                                          Targeted section
+                                        </p>
+                                        <p className="text-sm font-semibold text-slate-900">
+                                          {bucket.sectionTitle}
+                                        </p>
+                                        {isSelected && (
+                                          <p className="text-[11px] font-semibold text-emerald-600">
+                                            Selected
+                                          </p>
+                                        )}
+                                        <p className="text-xs text-slate-500">
+                                          {bucket.students.length} student
+                                          {bucket.students.length === 1 ? "" : "s"} -
+                                          {bucket.averageScore !== null
+                                            ? ` avg ${bucket.averageScore}%`
+                                            : " score pending"}
+                                        </p>
+                                      </div>
+                                      <div className="text-xs text-slate-500">
+                                        {bucket.hintsTotal} hint{bucket.hintsTotal === 1 ? "" : "s"}
+                                      </div>
+                                    </div>
+                                    <div className="mt-3 space-y-2 text-sm text-slate-700">
+                                      {bucket.students.map((row) => {
+                                        const scoreLabel =
+                                          row.section_score !== null && row.section_score !== undefined
+                                            ? `${Math.round(row.section_score)}%`
+                                            : "--"
+                                        return (
+                                          <div
+                                            key={`${row.student_id}-${row.section_id ?? row.section_title}`}
+                                            className="flex items-center justify-between border-b border-slate-200/70 pb-2 last:border-b-0 last:pb-0"
+                                          >
+                                            <div>
+                                              <p className="font-semibold text-slate-900">{row.student_name}</p>
+                                              <p className="text-[11px] text-slate-500">
+                                                Hints: {row.hints ?? "--"}
+                                              </p>
                                             </div>
-                                          </td>
-                                        </tr>
-                                      )
-                                    })}
-                                  </tbody>
-                                </table>
-                              </div>
-                            ) : (
-                              <p className="text-xs text-slate-500">No weak students were flagged yet.</p>
-                            )}
-                          </div>
-                        ) : (
-                          <div className="space-y-4">
-                            <div className="space-y-1">
-                              {group.items.map((item) => (
-                                <div
-                                  key={`${group.title}-${item.name}`}
-                                  className="flex items-center justify-between border-b border-slate-100 pb-2 last:border-0 last:pb-0"
-                                >
-                                  <div className="min-w-0">
-                                    <p className="font-semibold text-slate-900">{item.name}</p>
-                                    <p>{item.detail}</p>
+                                            <span className="text-[11px] font-semibold text-rose-600">
+                                              {scoreLabel}
+                                            </span>
+                                          </div>
+                                        )
+                                      })}
+                                    </div>
+                                    <div className="mt-3 flex flex-col gap-2 border-t border-dashed border-slate-200 pt-3 text-xs text-slate-500">
+                                      {(() => {
+                                        const actions = sectionActionLog[bucket.id] ?? []
+                                        if (!actions.length) {
+                                          return <p>No actions taken yet.</p>
+                                        }
+                                        const last = actions[0]
+                                        return (
+                                          <div className="space-y-1">
+                                          <p className="text-[11px] text-slate-500">
+                                            Last action: <span className="text-[11px] font-semibold text-slate-900">{last.label}</span>
+                                          </p>
+                                          <p className="text-[11px] text-slate-500">
+                                            Last action time: <span className="text-[11px] font-semibold text-slate-900">{formatTimestamp(last.timestamp)}</span>
+                                          </p>
+                                          {/* <p className="text-[11px] leading-snug text-slate-600">{last.message}</p> */}
+                                          {/* <p className="text-[10px] text-slate-400">
+                                            Teacher: You · {formatTimestamp(last.timestamp)}
+                                          </p> */}
+                                        </div>
+                                        )
+                                      })()}
+                                      <button
+                                        type="button"
+                                        disabled={actionHistoryLoadingFor === bucket.id}
+                                        onClick={() => {
+                                          setActionLogBucketId(bucket.id)
+                                          const sectionId =
+                                            bucket.students
+                                              .map((row) => row.section_id)
+                                              .find(Boolean) ?? null
+                                          void fetchSectionHistory(bucket.id, sectionId)
+                                        }}
+                                        style={{ float: "left", width: "200px" }}
+                                        className="inline-flex w-full items-center justify-center rounded-2xl border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-900 shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
+                                      >
+                                        {actionHistoryLoadingFor === bucket.id
+                                          ? "Loading..."
+                                          : "View action history"}
+                                      </button>
+                                    </div>
                                   </div>
-                                  <span className="text-[11px] text-slate-400">{item.tag}</span>
-                                </div>
-                              ))}
+                                )
+                              })}
                             </div>
-                            {group.title === "Ready for Extension" && group.tableRows && (
-                              <div className="space-y-3">
-                                <div className="rounded-2xl border border-slate-100 bg-slate-50/80 p-4 shadow-sm">
-                                  <div className="flex items-start justify-between gap-4">
-                                    <div>
-                                      <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Ready students</p>
-                                      <p className="text-sm font-semibold text-slate-900">Sections where students scored ≥ 80%</p>
-                                      <p className="text-xs text-slate-500">
-                                        Only students already flagged in the “Ready for Extension” bucket are shown; each entry represents a section where they exceeded 80%.
-                                      </p>
-                                    </div>
-                                    <div className="text-right text-xs text-slate-500">
-                                      {Array.from(new Set(group.tableRows.map((row) => row.student_id))).length} students ·{" "}
-                                      {group.tableRows.length} strong entries
-                                    </div>
-                                  </div>
-                                </div>
-                                {group.tableRows.length ? (
-                                  <div className="overflow-x-auto rounded-2xl border border-slate-100 bg-white p-2 shadow-sm">
-                                    <table className="min-w-full text-[11px]">
-                                      <thead>
-                                        <tr className="text-[11px] uppercase tracking-[0.2em] text-slate-500">
-                                          <th className="px-2 py-2 text-left">Student</th>
-                                          <th className="px-2 py-2 text-left">Section</th>
-                                          <th className="px-2 py-2 text-center">Score</th>
-                                          <th className="px-2 py-2 text-center">Hints</th>
-                                        </tr>
-                                      </thead>
-                                      <tbody className="divide-y divide-slate-100 text-slate-700">
-                                        {group.tableRows.map((row, index) => {
-                                          const sectionTitle = row.section_title ?? "Overall"
-                                          const scoreLabel =
-                                            row.section_score !== null && row.section_score !== undefined
-                                              ? `${Math.round(row.section_score)}%`
-                                              : "--"
-                                          return (
-                                            <tr key={`${row.student_id}-${index}-${sectionTitle}`}>
-                                              <td className="px-2 py-2">
-                                                <p className="font-semibold text-slate-900">{row.student_name}</p>
-                                              </td>
-                                              <td className="px-2 py-2">{sectionTitle}</td>
-                                              <td className="px-2 py-2 text-center font-semibold text-emerald-600">
-                                                {scoreLabel}
-                                              </td>
-                                              <td className="px-2 py-2 text-center">{row.hints ?? "--"}</td>
-                                            </tr>
-                                          )
-                                        })}
-                                      </tbody>
-                                    </table>
-                                  </div>
-                                ) : (
-                                  <p className="text-xs text-slate-500">No sections surpassing the readiness threshold yet.</p>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        )}
-                        <div className="flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.2em] text-slate-400">
-                          {group.actions.map((action) => (
-                            <span
-                              key={`${group.title}-${action}`}
-                              className="rounded-full border border-slate-200 px-3 py-1"
-                            >
-                              {action}
-                            </span>
-                          ))}
+                          ) : (
+                            <p className="text-xs text-slate-500">
+                              No sections surpassing the readiness threshold yet.
+                            </p>
+                          )}
+                        </div>
+                        <div className="text-xs text-slate-500">
+                          {targetBucket
+                            ? `Selected section: ${targetBucket.sectionTitle}`
+                            : "Select a section to notify students at scale."}
+                        </div>
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          {FOCUS_GROUP_ACTIONS.map((action) => {
+                            const actionKey = `${group.title}-${targetBucket?.id ?? "none"}-${action.label}`
+                            const isLoading = Boolean(sectionActionLoading[actionKey])
+                            return (
+                              <button
+                                key={actionKey}
+                                type="button"
+                                disabled={!targetBucket || isLoading}
+                                onClick={async () => {
+                                  if (!targetBucket) return
+                                  let classTiming: string | undefined
+                                  if (action.requiresTiming) {
+                                    const timingResponse =
+                                      typeof window !== "undefined"
+                                        ? window.prompt(action.timingPrompt ?? "When is the extra class happening?")
+                                        : null
+                                    if (!timingResponse) {
+                                      toast.info("Class timing is required to send this notification.")
+                                      return
+                                    }
+                                    const trimmedTiming = timingResponse.trim()
+                                    if (!trimmedTiming) {
+                                      toast.info("Class timing is required to send this notification.")
+                                      return
+                                    }
+                                    classTiming = trimmedTiming
+                                  }
+                                  const context = classTiming ? { classTiming } : undefined
+                                  void handleSectionAction(
+                                    group.title,
+                                    targetBucket,
+                                    action.label,
+                                    action.buildMessage(targetBucket.sectionTitle, context),
+                                    action.needsRevisionNotes,
+                                    classTiming,
+                                  )
+                                }}
+                                className={`rounded-2xl border border-slate-200 bg-white px-3 py-2 text-[12px] font-semibold text-slate-900 transition hover:border-slate-300 ${
+                                  !targetBucket || isLoading ? "cursor-not-allowed opacity-60" : ""
+                                }`}
+                              >
+                                {isLoading ? "Sending..." : action.label}
+                              </button>
+                            )
+                          })}
                         </div>
                         {group.title !== "Stuck Students" && group.strugglingActions && (
                           <div className="mt-2 space-y-1 text-left text-sm">
@@ -1582,7 +2030,8 @@ export default function ClassInsightShell(props: Props) {
         <>
           <div className="fixed inset-0 z-40 bg-black/30" onClick={() => setActiveTile(null)} />
           <aside
-            className="fixed right-0 top-0 z-50 flex h-full w-full max-w-md flex-col gap-4 rounded-l-1xl border border-slate-200/80 bg-white p-6 shadow-2xl"
+            style={{ width: "615px" }}
+            className="fixed right-0 top-0 z-50 flex h-full flex-col gap-4 rounded-l-1xl border border-slate-200/80 bg-white p-6 shadow-2xl"
             role="dialog"
             aria-label="Student breakdown"
           >
@@ -1611,12 +2060,11 @@ export default function ClassInsightShell(props: Props) {
                 activeTile.students.map((student) => {
                   const isExpanded = expandedStudentId === student.student_id
                   const studentSections = student.sections ?? []
-                  const assignedSectionDetails = studentSections.filter((section) => section.assigned)
-                  const assignedCount = assignedSectionDetails.length
-                  const completedAssignedSections = assignedSectionDetails.filter((section) => section.completed).length
+                  const totalSections = studentSections.length
+                  const completedSections = studentSections.filter((section) => section.completed).length
                   const computedCompletionPercent =
-                    assignedCount > 0
-                      ? Math.round((completedAssignedSections / assignedCount) * 100)
+                    totalSections > 0
+                      ? Math.round((completedSections / totalSections) * 100)
                       : null
                   const fallbackCompletionPercent =
                     student.module_completion_percent !== null && student.module_completion_percent !== undefined
@@ -1630,14 +2078,16 @@ export default function ClassInsightShell(props: Props) {
                       : "--"
                   const completionDetailText =
                     computedCompletionPercent !== null
-                      ? `${computedCompletionPercent}% of assigned sections`
+                      ? `${computedCompletionPercent}% of ${totalSections} sections`
                       : fallbackCompletionPercent !== null
                       ? `${fallbackCompletionPercent}% of sections`
                       : "No completion data"
+                  const studentTone = getScoreTone(student.module_score ?? null)
+                  const studentBorderClass = studentToneBorderClasses[studentTone]
                   return (
                     <div
                       key={student.student_id}
-                      className="rounded-1xl border border-slate-200 bg-slate-50 px-4 py-3 shadow-sm"
+                      className={`rounded-1xl border ${studentBorderClass} bg-slate-50 px-3 py-1 shadow-sm`}
                     >
                       <button
                         type="button"
@@ -1688,9 +2138,11 @@ export default function ClassInsightShell(props: Props) {
                             <p className="text-[12px] uppercase tracking-[0.1em] text-slate-400">
                               <b style={{ color: "#000" }}>Section detail</b>
                             </p>
-                            {student.sections.length ? (
+                            {studentSections.length ? (
                               <div className="space-y-2">
-                                    {student.sections.map((section) => {
+                                    {studentSections.map((section) => {
+                                      const sectionTone = getScoreTone(section.section_score)
+                                      const sectionBorderClass = sectionToneBorderClasses[sectionTone]
                                       const scoreLabel =
                                         section.section_score !== null
                                           ? `${section.section_score}%`
@@ -1698,7 +2150,7 @@ export default function ClassInsightShell(props: Props) {
                                       return (
                                         <div
                                           key={section.section_id}
-                                          className="rounded-1xl border border-slate-200 bg-white/80 px-3 py-2"
+                                          className={`rounded-1xl border ${sectionBorderClass} bg-white/80 px-3 py-2`}
                                         >
                                           <div className="flex flex-wrap items-center justify-between gap-2 text-[13px] font-semibold text-slate-900">
                                             <div className="flex items-center gap-2">
