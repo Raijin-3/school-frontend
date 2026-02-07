@@ -49,6 +49,11 @@ export type ModuleStudentSection = {
   adaptive_status: "Completed" | "In progress"
   exercise_status: "Completed" | "In progress"
   assigned: boolean
+  adaptive_last_attempted_at?: string | null
+  exercise_last_attempted_at?: string | null
+  exercise_question_count?: number | null
+  exercise_attempted_questions?: number | null
+  module_id?: string | null
 }
 
 export type AiUsageSegment = {
@@ -131,6 +136,13 @@ export type FocusGroupTableRow = {
   mastery: number | string | null
   hints?: number | null
   section_id?: string
+  module_id?: string | null
+  adaptive_status?: "Completed" | "In progress" | string | null
+  exercise_status?: "Completed" | "In progress" | string | null
+  adaptive_last_attempted_at?: string | null
+  exercise_last_attempted_at?: string | null
+  exercise_question_count?: number | null
+  exercise_attempted_questions?: number | null
 }
 
 export type ModuleStudentBreakdown = {
