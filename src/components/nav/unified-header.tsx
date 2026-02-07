@@ -16,6 +16,8 @@ import { GAMIFICATION_PROGRESS_EVENT } from "@/lib/gamification"
 import { supabaseBrowser } from "@/lib/supabase-browser"
 import { clearUserCache } from "@/lib/clear-user-cache"
 import { getGamificationLevelProgress, getLevelFromXp } from "@/lib/gamification-levels"
+import { getNotificationMessage } from "@/lib/notification-message"
+import { formatNotificationTime, getNotificationMetadataLine } from "@/lib/notification-utils"
 
 type User = {
   id: string
@@ -40,6 +42,16 @@ type Props = {
 type EnhancedUserProfile = Props["userProfile"] & {
   level?: number
   levelProgressPercent?: number
+}
+
+type StudentNotification = {
+  id: string
+  action_label?: string | null
+  message?: string | null
+  metadata?: Record<string, string | null> | null
+  created_at?: string | null
+  curriculum_url?: string | null
+  is_read?: boolean | null
 }
 
 type NavItem = {
@@ -72,6 +84,12 @@ export function UnifiedHeader({ user: initialUser, userProfile: initialUserProfi
     enrichGamiProfile(initialUserProfile),
   )
   const router = useRouter()
+  const [notifications, setNotifications] = useState<StudentNotification[]>([])
+  const [notificationsError, setNotificationsError] = useState<string | null>(null)
+  const [isLoadingNotifications, setIsLoadingNotifications] = useState(false)
+  const [isMarkingNotificationsRead, setIsMarkingNotificationsRead] = useState(false)
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
+  const isAuthenticated = Boolean(user)
 
   useEffect(() => {
     setMounted(true)
@@ -99,6 +117,83 @@ export function UnifiedHeader({ user: initialUser, userProfile: initialUserProfi
       window.removeEventListener(GAMIFICATION_PROGRESS_EVENT, handleGamificationProgress)
     }
   }, [])
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setNotifications([])
+      setNotificationsError(null)
+      setIsLoadingNotifications(false)
+      setIsMarkingNotificationsRead(false)
+      return
+    }
+
+    let isCancelled = false
+
+    const loadNotifications = async () => {
+      setIsLoadingNotifications(true)
+      setNotificationsError(null)
+      try {
+        const response = await fetch("/api/student/notifications?limit=15", {
+          cache: "no-store",
+        })
+        if (!response.ok) {
+          const errorText = await response.text()
+          throw new Error(errorText || "Failed to load notifications")
+        }
+        const payload = await response.json()
+        if (!isCancelled) {
+          setNotifications(payload.notifications ?? [])
+        }
+      } catch (error) {
+        if (!isCancelled) {
+          setNotificationsError(
+            error instanceof Error ? error.message : "Failed to load notifications",
+          )
+        }
+      } finally {
+        if (!isCancelled) {
+          setIsLoadingNotifications(false)
+        }
+      }
+    }
+
+    void loadNotifications()
+
+    return () => {
+      isCancelled = true
+    }
+  }, [isAuthenticated])
+
+  useEffect(() => {
+    if (!isNotificationsOpen) return
+    if (!notifications.some((item) => !item.is_read)) return
+    const markAllRead = async () => {
+      setIsMarkingNotificationsRead(true)
+      try {
+        const response = await fetch("/api/student/notifications", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          cache: "no-store",
+        })
+        if (!response.ok) {
+          const errorText = await response.text()
+          throw new Error(errorText || "Failed to mark notifications as read")
+        }
+        setNotifications((prev) =>
+          prev.map((item) => ({ ...item, is_read: true })),
+        )
+      } catch (error) {
+        console.error("Failed to mark notifications read:", error)
+      } finally {
+        setIsMarkingNotificationsRead(false)
+      }
+    }
+    void markAllRead()
+  }, [isNotificationsOpen, notifications])
+
+  const handleNotificationsOpenChange = (open: boolean) => {
+    setIsNotificationsOpen(open)
+  }
 
   const handleLogout = async () => {
     try {
@@ -128,7 +223,6 @@ export function UnifiedHeader({ user: initialUser, userProfile: initialUserProfi
   const displayName = user?.user_metadata?.full_name || user?.email?.split("@")[0] || "Learner"
   const avatarUrl = user?.user_metadata?.avatar_url || null
   const initial = displayName.charAt(0).toUpperCase()
-  const isAuthenticated = Boolean(user)
 
   const isParent = userProfile?.role === "parent"
   const hideLogoForOnboarding =
@@ -163,6 +257,8 @@ export function UnifiedHeader({ user: initialUser, userProfile: initialUserProfi
       </header>
     )
   }
+
+  const unreadCount = notifications.filter((item) => !item.is_read).length
 
   return (
     <header className="sticky top-0 z-50 border-b border-white/20 bg-white/10 backdrop-blur-xl supports-[backdrop-filter]:bg-white/10">
@@ -227,6 +323,12 @@ export function UnifiedHeader({ user: initialUser, userProfile: initialUserProfi
               initial={initial}
               isParent={isParent}
               onLogout={handleLogout}
+              notifications={notifications}
+              isLoadingNotifications={isLoadingNotifications}
+              notificationsError={notificationsError}
+              unreadCount={unreadCount}
+              isMarkingNotificationsRead={isMarkingNotificationsRead}
+              onNotificationsOpenChange={handleNotificationsOpenChange}
             />
           ) : (
             <PublicNav />
@@ -246,7 +348,13 @@ function AuthenticatedNav({
   avatarUrl,
   initial,
   isParent,
-  onLogout
+  onLogout,
+  notifications,
+  isLoadingNotifications,
+  notificationsError,
+  unreadCount,
+  isMarkingNotificationsRead,
+  onNotificationsOpenChange,
 }: {
   user: User
   userProfile?: EnhancedUserProfile | null
@@ -255,12 +363,13 @@ function AuthenticatedNav({
   initial: string
   isParent: boolean
   onLogout: () => void
+  notifications: StudentNotification[]
+  isLoadingNotifications: boolean
+  notificationsError: string | null
+  unreadCount: number
+  isMarkingNotificationsRead: boolean
+  onNotificationsOpenChange?: (open: boolean) => void
 }) {
-  const sampleNotifs = [
-    { id: "n1", title: "Daily review is ready", desc: "10 flashcards due", href: "/reviews/today" },
-    { id: "n2", title: "New recommendation", desc: "Try SQL Joins module", href: "/modules/sql-joins" },
-    { id: "n3", title: "Streak milestone", desc: "12 days and counting", href: "/dashboard" },
-  ]
   const xpValue = Math.max(0, userProfile?.xp ?? 0)
   const derivedLevel = userProfile?.level ?? getLevelFromXp(xpValue)
   const rawProgress =
@@ -307,58 +416,81 @@ function AuthenticatedNav({
       )}
 
       {/* Notifications */}
-      <DropdownMenu>
-        {/* <DropdownMenuTrigger asChild>
-          <Button 
-            variant="outline" 
-            size="icon" 
+      <DropdownMenu onOpenChange={onNotificationsOpenChange}>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="outline"
+            size="icon"
             className="relative h-10 w-10 rounded-xl border-white/20 bg-white/20 backdrop-blur-sm hover:bg-white/30"
           >
             <Bell className="h-5 w-5" />
-            {sampleNotifs.length > 0 && (
+            {unreadCount > 0 && (
               <Badge className="absolute -top-2 -right-2 h-5 w-5 rounded-full p-0 flex items-center justify-center bg-red-500 text-xs text-white border-2 border-white">
-                {sampleNotifs.length}
+                {unreadCount > 9 ? "9+" : unreadCount}
               </Badge>
             )}
           </Button>
-        </DropdownMenuTrigger> */}
-        {/* <DropdownMenuContent align="end" className="w-80 p-0 bg-white/95 backdrop-blur-xl border-white/20">
-          <div className="border-b border-gray-200 p-4">
-            <h3 className="font-semibold text-gray-900">Notifications</h3>
-            <p className="text-sm text-gray-600">Stay updated with your learning progress</p>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-80 p-0 bg-white/95 backdrop-blur-xl border-white/20">
+          <div className="border-b border-gray-200 px-4 py-3">
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold text-gray-900 text-sm">Notifications</h3>
+              {!isLoadingNotifications && notifications.length > 0 && (
+                <span className="text-[10px] uppercase tracking-[0.2em] text-gray-500">
+                  {notifications.length} stored
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-gray-500">Teacher updates for your learning</p>
           </div>
-          <div className="max-h-96 overflow-auto">
-            {sampleNotifs.length === 0 ? (
-              <div className="p-6 text-center text-gray-500">
-                <Bell className="h-8 w-8 mx-auto mb-2 opacity-40" />
-                <p className="text-sm">You're all caught up!</p>
-              </div>
-            ) : (
-              <div className="divide-y divide-gray-100">
-                {sampleNotifs.map((notif) => (
-                  <Link
-                    key={notif.id}
-                    href={notif.href}
-                    className="block p-4 hover:bg-white/60 transition-colors"
-                  >
-                    <div className="font-medium text-gray-900 text-sm">{notif.title}</div>
-                    <div className="text-sm text-gray-600 mt-1">{notif.desc}</div>
-                  </Link>
-                ))}
-              </div>
-            )}
-          </div>
-          <div className="border-t border-gray-200 p-3">
-            <Link 
-              href="/notifications"
-              className="text-sm text-indigo-600 hover:text-indigo-700 font-medium"
-            >
-              View all notifications →
-            </Link>
-          </div>
-        </DropdownMenuContent> */}
+          {notificationsError ? (
+            <div className="p-4 text-sm text-red-600">{notificationsError}</div>
+          ) : isLoadingNotifications ? (
+            <div className="p-4 text-sm text-gray-500">Loading notifications...</div>
+          ) : notifications.length === 0 ? (
+            <div className="p-6 text-center text-gray-500">
+              <Bell className="h-8 w-8 mx-auto mb-2 opacity-40" />
+              <p className="text-sm font-medium text-gray-900">No notifications yet</p>
+              <p className="text-[11px] text-gray-500">
+                Teachers will send action reminders that appear here.
+              </p>
+            </div>
+          ) : (
+            <div className="max-h-80 overflow-y-auto divide-y divide-gray-100">
+              {notifications.map((notification) => (
+                <div key={notification.id} className="p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <p className="font-medium text-sm text-gray-900">
+                      {notification.action_label ?? "Update"}
+                    </p>
+                    <span className="text-[11px] text-gray-400">
+                      {formatNotificationTime(notification.created_at)}
+                    </span>
+                  </div>
+                  {getNotificationMessage(notification) && (
+                    <p className="text-xs text-gray-600 mt-1 whitespace-pre-line">
+                      {getNotificationMessage(notification)}
+                    </p>
+                  )}
+                  {getNotificationMetadataLine(notification.metadata) && (
+                    <p className="text-[11px] text-gray-500 mt-2">
+                      {getNotificationMetadataLine(notification.metadata)}
+                    </p>
+                  )}
+                  {notification.curriculum_url && (
+                    <Link
+                      href={notification.curriculum_url}
+                      className="mt-2 inline-flex text-xs font-semibold text-indigo-600 hover:text-indigo-500"
+                    >
+                      Go to related section
+                    </Link>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </DropdownMenuContent>
       </DropdownMenu>
-
       {/* User Profile Dropdown Menu */}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -494,3 +626,4 @@ function LevelStatus({ userProfile }: { userProfile?: EnhancedUserProfile | null
     </div>
   )
 }
+

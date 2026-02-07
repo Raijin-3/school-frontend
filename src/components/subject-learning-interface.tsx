@@ -5,14 +5,17 @@ import {
   getLatestQuestionRun,
   recordQuestionRun,
 } from "@/lib/api-client";
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import DOMPurify from "dompurify";
+import Link from "next/link";
 import { VideoPlayer } from "@/components/video-player";
 import { ProfessionalCourseTabs } from "@/components/professional-course-tabs";
 import { PracticeArea } from "@/components/practice-area";
-import { PracticeMentorChat } from "@/components/practice-mentor-chat";
+import { PracticeMentorChat } from "@/components/revision-mentor-chat";
 import { useVideoState } from "@/hooks/use-video-state";
 import { supabaseBrowser } from '@/lib/supabase-browser';
+import { getNotificationMessage } from "@/lib/notification-message";
+import { formatNotificationTime, getNotificationMetadataLine } from "@/lib/notification-utils";
 import {
   recordLectureCompletion,
   recordQuestionAttempt,
@@ -29,6 +32,7 @@ import {
   BookOpen,
   CheckCircle,
   CheckSquare,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Menu,
@@ -151,6 +155,16 @@ const normalizeAnswerValue = (value: unknown): string => {
     return "";
   }
   return value.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
+};
+
+type StudentNotification = {
+  id: string;
+  section_id?: string | null;
+  action_label?: string | null;
+  message?: string | null;
+  metadata?: Record<string, string | null> | null;
+  curriculum_url?: string | null;
+  created_at?: string | null;
 };
 
 const WORKSPACE_RUN_STORAGE_PREFIX = "jarvis.workspace.run";
@@ -4639,6 +4653,29 @@ export function SubjectLearningInterface({
     [allSections, selectedSectionId]
 
   );
+  const [studentNotifications, setStudentNotifications] = useState<StudentNotification[]>([])
+  const [activeRevisionNote, setActiveRevisionNote] = useState<StudentNotification | null>(null)
+  const [expandedNotificationSections, setExpandedNotificationSections] = useState<Record<string, boolean>>({})
+  const [highlightedRevisionId, setHighlightedRevisionId] = useState<string | null>(null)
+  const [revisionMentorSessions, setRevisionMentorSessions] = useState<Record<string, MentorChatSession | null>>({})
+  const [revisionMentorLoading, setRevisionMentorLoading] = useState<Record<string, boolean>>({})
+  const [revisionMentorSending, setRevisionMentorSending] = useState<Record<string, boolean>>({})
+  const [revisionMentorErrors, setRevisionMentorErrors] = useState<Record<string, string>>({})
+  const notificationsBySection = useMemo(() => {
+    const sectionMap = new Map<string, StudentNotification[]>()
+    const globalNotifications: StudentNotification[] = []
+    studentNotifications.forEach((notification) => {
+      const sectionKey = notification.section_id ? String(notification.section_id) : null
+      if (sectionKey) {
+        const bucket = sectionMap.get(sectionKey) ?? []
+        bucket.push(notification)
+        sectionMap.set(sectionKey, bucket)
+        return
+      }
+      globalNotifications.push(notification)
+    })
+    return { sectionMap, globalNotifications }
+  }, [studentNotifications])
   const hasLessonToolConfig = lessonToolConfigBySection !== undefined;
   const resolveToolEnabled = (value?: boolean) => (hasLessonToolConfig ? value === true : true);
   const selectedSectionToolConfig =
@@ -4651,6 +4688,263 @@ export function SubjectLearningInterface({
   const defaultSelectedResource = useMemo(() => getDefaultResource(selectedSection), [selectedSection]);
 
   const [selectedResource, setSelectedResourceState] = useState<SelectedResource | null>(() => defaultSelectedResource);
+
+  const revisionSectionId = useMemo(
+    () => activeRevisionNote?.section_id ?? selectedSectionId,
+    [activeRevisionNote, selectedSectionId],
+  );
+
+  const revisionChatQuestionId = useMemo(() => {
+    if (!activeRevisionNote) return null;
+    return normalizeIdentifier(activeRevisionNote.id) ?? activeRevisionNote.id;
+  }, [activeRevisionNote]);
+
+  const buildRevisionMentorSession = useCallback(
+    (note: StudentNotification | null, questionId?: string): MentorChatSession | null => {
+      if (!note || !questionId) {
+        return null;
+      }
+      const noteMessage = note.message ?? getNotificationMessage(note);
+      const contextText = noteMessage?.trim() || "Revision notes";
+      const now = new Date().toISOString();
+      const sectionTitle =
+        note.metadata?.sectionTitle?.trim() || selectedSection?.title || null;
+      return {
+        question: {
+          id: questionId,
+          text: contextText,
+        },
+        config: {
+          context: contextText,
+          hypothesis: contextText,
+          guidingQuestion: contextText,
+          targetQuestions: [],
+          introMessage: "Ask the Hypothesis Mentor about these revision notes.",
+        },
+        chat: {
+          id: questionId,
+          status: "active",
+          messages: [],
+          identified_questions: [],
+          final_summary: null,
+          completed_at: null,
+          created_at: now,
+          updated_at: now,
+        },
+        exercise: {
+          id: null,
+          title: sectionTitle ?? "Revision notes",
+          description: contextText,
+          content: null,
+        },
+        section: {
+          id: note.section_id ?? selectedSection?.id ?? null,
+          title: sectionTitle,
+          overview: selectedSection?.description ?? null,
+        },
+        questions: [
+          {
+            id: questionId,
+            order: 0,
+            text: contextText,
+          },
+        ],
+      };
+    },
+    [selectedSection],
+  );
+
+  const revisionNoteMessage = useMemo(() => {
+    if (!activeRevisionNote) {
+      return "";
+    }
+    return activeRevisionNote.message?.trim() || getNotificationMessage(activeRevisionNote);
+  }, [activeRevisionNote]);
+
+  const fallbackRevisionSession = useMemo(() => {
+    if (!revisionChatQuestionId || !activeRevisionNote) {
+      return null;
+    }
+    return buildRevisionMentorSession(activeRevisionNote, revisionChatQuestionId);
+  }, [activeRevisionNote, buildRevisionMentorSession, revisionChatQuestionId]);
+
+  const loadRevisionMentorSession = useCallback(
+    async (questionId: string, sectionId: string) => {
+      const normalizedQuestionId = normalizeIdentifier(questionId) ?? questionId;
+      if (!normalizedQuestionId) {
+        return;
+      }
+      if (
+        normalizedQuestionId in revisionMentorSessions ||
+        Boolean(revisionMentorLoading[normalizedQuestionId])
+      ) {
+        return;
+      }
+
+      setRevisionMentorErrors((prev) => {
+        if (!(normalizedQuestionId in prev)) {
+          return prev;
+        }
+        const { [normalizedQuestionId]: _removed, ...rest } = prev;
+        return rest;
+      });
+
+      setRevisionMentorLoading((prev) => ({
+        ...prev,
+        [normalizedQuestionId]: true,
+      }));
+
+      try {
+        const response = await apiGet<MentorChatSession | null>(
+          `/v1/sections/${sectionId}/revision-notes/${normalizedQuestionId}/chat`,
+        );
+        setRevisionMentorSessions((prev) => ({
+          ...prev,
+          [normalizedQuestionId]: response ?? null,
+        }));
+        setRevisionMentorErrors((prev) => {
+          if (!(normalizedQuestionId in prev)) {
+            return prev;
+          }
+          const { [normalizedQuestionId]: _removed, ...rest } = prev;
+          return rest;
+        });
+      } catch (error) {
+        console.error('Failed to load revision mentor session:', error);
+        setRevisionMentorErrors((prev) => ({
+          ...prev,
+          [normalizedQuestionId]: 'Mentor conversation is currently unavailable.',
+        }));
+      } finally {
+        setRevisionMentorLoading((prev) => ({
+          ...prev,
+          [normalizedQuestionId]: false,
+        }));
+      }
+    },
+    [apiGet, revisionMentorLoading, revisionMentorSessions],
+  );
+
+  useEffect(() => {
+    if (!activeRevisionNote || !revisionChatQuestionId || !revisionSectionId) {
+      return;
+    }
+    void loadRevisionMentorSession(revisionChatQuestionId, revisionSectionId);
+  }, [activeRevisionNote, loadRevisionMentorSession, revisionChatQuestionId, revisionSectionId]);
+
+  const normalizedRevisionSessionId = revisionChatQuestionId;
+  const storedRevisionSession =
+    normalizedRevisionSessionId !== null
+      ? revisionMentorSessions[normalizedRevisionSessionId]
+      : undefined;
+  const activeRevisionMentorSession =
+    storedRevisionSession ?? fallbackRevisionSession;
+  const revisionMentorSessionsProp =
+    normalizedRevisionSessionId && activeRevisionMentorSession
+      ? { [normalizedRevisionSessionId]: activeRevisionMentorSession }
+      : {};
+  const revisionMentorChatQuestions =
+    activeRevisionMentorSession?.questions ??
+    (normalizedRevisionSessionId
+      ? [
+          {
+            id: normalizedRevisionSessionId,
+            order: 0,
+            text: revisionNoteMessage,
+          },
+        ]
+      : []);
+
+  const handleLoadRevisionSession = useCallback(
+    (questionId: string, _exerciseId?: string) => {
+      if (!revisionSectionId) {
+        return;
+      }
+      void loadRevisionMentorSession(questionId, revisionSectionId);
+    },
+    [loadRevisionMentorSession, revisionSectionId],
+  );
+
+  const sendRevisionMentorChatMessage = useCallback(
+    async (questionId: string, message: string) => {
+      if (!activeRevisionNote) {
+        return;
+      }
+      const normalizedQuestionId = normalizeIdentifier(questionId) ?? questionId;
+      if (!normalizedQuestionId) {
+        return;
+      }
+      const sectionId = revisionSectionId;
+      if (!sectionId) {
+        setRevisionMentorErrors((prev) => ({
+          ...prev,
+          [normalizedQuestionId]: "Unable to open mentor chat for these revision notes.",
+        }));
+        return;
+      }
+      if (!message.trim()) {
+        setRevisionMentorErrors((prev) => ({
+          ...prev,
+          [normalizedQuestionId]: "Please share your thinking before sending the message.",
+        }));
+        return;
+      }
+      setRevisionMentorSending((prev) => ({
+        ...prev,
+        [normalizedQuestionId]: true,
+      }));
+      const session = revisionMentorSessions[normalizedQuestionId] ?? null;
+      const conversationHistory = session?.chat?.messages ?? [];
+      try {
+        const response = await apiPost<MentorChatSession>(
+          `/v1/sections/${sectionId}/revision-notes/${normalizedQuestionId}/chat`,
+          {
+            message: message.trim(),
+            conversation_history: conversationHistory,
+            section_title:
+              activeRevisionNote.metadata?.sectionTitle?.trim() ??
+              selectedSection?.title ??
+              undefined,
+            section_overview: selectedSection?.description ?? undefined,
+            revision_note: revisionNoteMessage,
+            subject_title: subjectTitle ?? undefined,
+          },
+        );
+        if (response) {
+          setRevisionMentorSessions((prev) => ({
+            ...prev,
+            [normalizedQuestionId]: response,
+          }));
+          setRevisionMentorErrors((prev) => {
+            if (!(normalizedQuestionId in prev)) {
+              return prev;
+            }
+            const { [normalizedQuestionId]: _removed, ...rest } = prev;
+            return rest;
+          });
+        }
+      } catch (error) {
+        console.error("Failed to send revision mentor chat message:", error);
+        setRevisionMentorErrors((prev) => ({
+          ...prev,
+          [normalizedQuestionId]: "We could not reach the mentor. Try again in a moment.",
+        }));
+      } finally {
+        setRevisionMentorSending((prev) => ({
+          ...prev,
+          [normalizedQuestionId]: false,
+        }));
+      }
+    },
+    [
+      activeRevisionNote,
+      revisionMentorSessions,
+      revisionSectionId,
+      revisionNoteMessage,
+      selectedSection,
+      subjectTitle,
+    ],
+  );
 
   // Video state management (placed before effects that depend on it)
   const {
@@ -4676,6 +4970,34 @@ export function SubjectLearningInterface({
     allSectionsRef.current = allSections;
   }, [allSections]);
   const initialModuleHandledRef = useRef(!initialModuleSlug);
+
+  useEffect(() => {
+    let isMounted = true;
+    const fetchNotifications = async () => {
+      try {
+        const response = await fetch("/api/student/notifications?limit=50", {
+          cache: "no-store",
+        });
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(errorText || "Failed to load teacher notifications");
+        }
+        const payload = await response.json();
+        if (!isMounted) {
+          return;
+        }
+        setStudentNotifications(
+          Array.isArray(payload?.notifications) ? payload.notifications : [],
+        );
+      } catch (error) {
+        console.error("Failed to load student notifications for course content", error);
+      }
+    };
+    void fetchNotifications();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Quiz state
   const [loadedQuiz, setLoadedQuiz] = useState<Quiz | null>(null);
@@ -15745,21 +16067,136 @@ export function SubjectLearningInterface({
     );
   };
 
-  const renderEmptyDisplay = () => (
+const renderEmptyDisplay = () => (
 
-    <div className="rounded-2xl border border-white/60 bg-white/80 backdrop-blur-xl shadow-lg overflow-hidden min-h-[320px]">
+  <div className="rounded-2xl border border-white/60 bg-white/80 backdrop-blur-xl shadow-lg overflow-hidden min-h-[320px]">
 
-      <div className="h-full w-full flex items-center justify-center p-12 text-sm text-gray-500">
+    <div className="h-full w-full flex items-center justify-center p-12 text-sm text-gray-500">
 
-        Select a lecture, exercise, or quiz from the sidebar to get started.
-
-      </div>
+      Select a lecture, exercise, or quiz from the sidebar to get started.
 
     </div>
 
-  );
+  </div>
 
-  const renderQuestionPopup = (variant: "modal" | "embedded" = "modal") => {
+);
+
+const renderRevisionNoteBody = (message: string) => {
+  const normalized = message.replace(/\r/g, "")
+  const rawLines = normalized.split("\n")
+  const nodes: ReactNode[] = []
+  let bulletGroup: string[] = []
+
+  const flushBulletGroup = () => {
+    if (!bulletGroup.length) return
+    nodes.push(
+      <ul key={`bullet-group-${nodes.length}`} className="ml-4 list-disc space-y-1 text-sm text-slate-700">
+        {bulletGroup.map((item, index) => (
+          <li key={`bullet-${index}`} className="leading-relaxed">
+            {item.slice(2).trim()}
+          </li>
+        ))}
+      </ul>,
+    )
+    bulletGroup = []
+  }
+
+  rawLines.forEach((rawLine) => {
+    const line = rawLine.trim()
+    if (!line) {
+      flushBulletGroup()
+      return
+    }
+
+    if (line.startsWith("- ")) {
+      bulletGroup.push(line)
+      return
+    }
+
+    flushBulletGroup()
+
+    const isHeading = line.endsWith(":")
+    if (isHeading) {
+      nodes.push(
+        <p key={`heading-${nodes.length}`} className={`text-sm font-semibold text-slate-900 ${nodes.length ? "mt-4" : ""}`}>
+          {line.replace(/:+$/, "")}
+        </p>,
+      )
+      return
+    }
+
+    nodes.push(
+      <p key={`paragraph-${nodes.length}`} className="text-sm text-slate-700 leading-relaxed">
+        {line}
+      </p>,
+    )
+  })
+
+  flushBulletGroup()
+  return nodes
+}
+
+const renderRevisionNoteDisplay = () => {
+  if (!activeRevisionNote) {
+    return renderEmptyDisplay();
+  }
+
+  const metadataLine = getNotificationMetadataLine(activeRevisionNote.metadata ?? null);
+  const createdAtLabel = activeRevisionNote.created_at
+    ? formatNotificationTime(activeRevisionNote.created_at)
+    : null;
+  const message = activeRevisionNote.message ?? getNotificationMessage(activeRevisionNote);
+
+  return (
+    <div className="rounded-2xl border border-white/60 bg-white/80 backdrop-blur-xl shadow-lg overflow-hidden min-h-[320px]">
+      <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <BookOpen className="h-5 w-5 text-indigo-500" />
+            <p className="text-sm font-semibold text-gray-900">Revision notes</p>
+          </div>
+          {createdAtLabel && <p className="text-xs text-slate-500">{createdAtLabel}</p>}
+        </div>
+        <button
+          type="button"
+          className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition"
+          onClick={() => {
+            setActiveRevisionNote(null)
+            setHighlightedRevisionId(null)
+          }}
+        >
+          Close
+        </button>
+      </div>
+      <div className="px-4 py-4 text-sm leading-relaxed text-slate-800">
+        {renderRevisionNoteBody(message)}
+        {metadataLine && <p className="mt-3 text-xs text-slate-500">{metadataLine}</p>}
+      </div>
+            {revisionChatQuestionId ? (
+              <div className="border-t border-gray-200 bg-gray-50/60 px-4 py-4">
+                <PracticeMentorChat
+                  exerciseId={revisionSectionId}
+                  exerciseTitle={selectedSection?.title || "Revision notes"}
+                  exerciseDescription={metadataLine ?? undefined}
+                  sectionTitle={selectedSection?.title ?? undefined}
+                  questions={revisionMentorChatQuestions}
+                  activeQuestionId={revisionChatQuestionId}
+                  sessions={revisionMentorSessionsProp}
+                  loadingStates={revisionMentorLoading}
+                  sendingStates={revisionMentorSending}
+                  errorStates={revisionMentorErrors}
+                  onSelectQuestion={handleLoadRevisionSession}
+                  onLoadSession={handleLoadRevisionSession}
+                  onSendMessage={sendRevisionMentorChatMessage}
+                  emptyStateMessage="Share one uncertainty from these revision notes. The Hypothesis Mentor will help you deepen the analysis."
+                />
+              </div>
+            ) : null}
+    </div>
+  )
+};
+
+const renderQuestionPopup = (variant: "modal" | "embedded" = "modal") => {
     const isEmbedded = variant === "embedded";
 
     if (!selectedQuestionForPopup) {
@@ -17107,7 +17544,9 @@ export function SubjectLearningInterface({
 
   // console.log("Exercise Type:", exerciseType);
   // Show loader when generating content
-  if (selectedSectionId && (generatingExercise[selectedSectionId] || generatingQuiz[selectedSectionId])) {
+  if (activeRevisionNote) {
+    contentDisplay = renderRevisionNoteDisplay();
+  } else if (selectedSectionId && (generatingExercise[selectedSectionId] || generatingQuiz[selectedSectionId])) {
     const isGeneratingQuiz = generatingQuiz[selectedSectionId] && !generatingExercise[selectedSectionId];
     
     contentDisplay = (
@@ -17767,6 +18206,22 @@ export function SubjectLearningInterface({
                     // console.log(section.title, "hasStoredQuizzes:", hasStoredQuizzes);
                     const isSectionTopicEmpty = section.title === "Interview Practice Questions" || section.title === "End Project" || section.title === "End Project Final";
                     const hasAvailableQuizzes = hasStoredQuizzes;
+                    const sectionKey = section.id ? String(section.id) : null;
+                    const sectionSpecificNotifications = sectionKey
+                      ? notificationsBySection.sectionMap.get(sectionKey) ?? []
+                      : [];
+                    const combinedNotifications =
+                      sectionSpecificNotifications.length || notificationsBySection.globalNotifications.length
+                        ? [...sectionSpecificNotifications, ...notificationsBySection.globalNotifications]
+                        : [];
+                    const sortedSectionNotifications = combinedNotifications.length
+                      ? [...combinedNotifications].sort((a, b) => {
+                          const aTimestamp = a.created_at ? Date.parse(a.created_at) : 0;
+                          const bTimestamp = b.created_at ? Date.parse(b.created_at) : 0;
+                          return bTimestamp - aTimestamp;
+                        })
+                      : [];
+                    const hasSectionNotifications = sortedSectionNotifications.length > 0;
                     const storedSectionQuizSummary = sectionQuizSummaries[section.id];
                     const cachedSummary =
                       storedSectionQuizSummary ||
@@ -17947,7 +18402,7 @@ export function SubjectLearningInterface({
 
                       {isExpanded && (
 
-                        <div className="mt-2 space-y-1 pl-11 pr-2 pb-3">
+                        <div className="mt-2 space-y-1 pl-5 pr-2 pb-5">
 
                           {lectures.map((lecture, lectureIndex) => {
 
@@ -18176,119 +18631,241 @@ export function SubjectLearningInterface({
                                   )}
                                   {!isSectionTopicEmpty && (
                                     <>
-                                    
-                                  {!hasAvailableQuizzes && adaptiveHistoryEntries.length > 0 && (
-                                  <div className="space-y-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-xs text-slate-600">
-                                    <div className="mb-2 text-[11px] font-semibold text-slate-700">
-                                      Adaptive quiz sessions
-                                    </div>
-                                     <div className="grid gap-2">
-                                       {adaptiveHistoryEntries.map((entry, entryIndex) => {
-                                         const sessionLabel = `AI Quiz Session ${adaptiveHistoryEntries.length - entryIndex}`;
-                                         const timestampLabel =
-                                           formatAdaptiveSessionTimestamp(entry.updatedAt) ||
-                                           formatAdaptiveSessionTimestamp(entry.createdAt) ||
-                                           "Recent session";
-                                         const isActive =
-                                           selectedAdaptiveSessionReview?.sessionId === entry.sessionId;
-                                         const isLoading =
-                                           loadingAdaptiveSessionSummary === entry.sessionId;
-                                         return (
-                                           <button
-                                             key={entry.sessionId || `${section.id}-${entryIndex}`}
-                                             onClick={() =>
-                                               moduleAccessible &&
-                                               handleViewAdaptiveSessionSummary(section.id, entry, entryIndex)
-                                             }
-                                             disabled={!moduleAccessible || isLoading}
-                                             className={`w-full rounded-2xl border px-3 py-2 text-left font-semibold transition ${
-                                               isActive
-                                                 ? "border-indigo-400 bg-indigo-50 text-indigo-800"
-                                                 : "border-slate-200 bg-white text-slate-700 hover:border-indigo-200 hover:bg-indigo-50"
-                                             } ${isLoading ? "opacity-70 cursor-wait" : ""}`}
-                                           >
-                                             <div className="flex items-center justify-between gap-3">
-                                               <div>
-                                                 <div className="text-sm font-semibold text-slate-900">
-                                                   {sessionLabel}
-                                                 </div>
-                                                 <div className="text-[11px] text-slate-500">
-                                                   {timestampLabel}
-                                                 </div>
-                                               </div>
-                                               <span className="text-[11px] font-semibold text-slate-500">
-                                                 {entry.summary.score}% score
-                                               </span>
-                                             </div>
-                                             <div className="mt-1 text-[11px] text-slate-500">
-                                               {entry.summary.totalQuestions} questions · {entry.summary.correctAnswers}/{entry.summary.answeredQuestions} correct
-                                               {isLoading && (
-                                                 <span className="ml-2 text-indigo-500">Loading...</span>
-                                               )}
-                                             </div>
-                                           </button>
-                                         );
-                                       })}
-                                     </div>
-                                     <div className="mt-2 rounded-2xl border border-slate-200 bg-white/90 p-3 text-[12px] text-slate-600 shadow-sm">
-                                       <div className="flex items-center justify-between text-[11px] font-semibold text-slate-500">
-                                         <span>Total across sessions</span>
-                                         <span>Passing ≥ 70%</span>
-                                       </div>
-                                       <div className="mt-2 flex items-end justify-between text-lg font-semibold text-slate-900">
-                                         <span>{adaptiveHistoryTotals.totalQuestions} questions</span>
-                                         <span>{adaptiveAggregateScore}% score</span>
-                                       </div>
-                                       <p className="mt-1 text-[11px] text-slate-500">
-                                         {adaptiveHistoryTotals.totalCorrect}/{adaptiveHistoryTotals.totalAnswered} correct answers
-                                       </p>
-                                       <div
-                                         className={`mt-2 inline-flex items-center justify-center rounded-full border px-3 py-0.5 text-[11px] font-semibold ${
-                                           adaptivePassing
-                                             ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                                             : "border-red-200 bg-red-50 text-red-700"
-                                         }`}
-                                       >
-                                         {adaptivePassing ? "Passed" : "Needs improvement"}
-                                       </div>
-                                     </div>
-                                   </div>
-                                )}
+                                      {hasSectionNotifications && (
+                                        (() => {
+                                          const sectionNotificationKey = sectionKey ?? `${section.id}`
+                                          const isExpanded = Boolean(expandedNotificationSections[sectionNotificationKey])
+                                          const hasImportantNotification = sortedSectionNotifications.length > 0
+                                          return (
+                                            <div
+                                              className={`space-y-2 rounded-2xl border px-3 py-3 text-xs shadow-sm transition ${
+                                                hasImportantNotification
+                                                  ? "border-indigo-300"
+                                                  : "border-slate-200 bg-white/90"
+                                              }`}
+                                            >
+                                              <button
+                                                type="button"
+                                                className={`flex w-full items-center justify-between gap-2 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${
+                                                  hasImportantNotification ? "text-indigo-900" : "text-slate-600"
+                                                }`}
+                                                onClick={() =>
+                                                  setExpandedNotificationSections((prev) => ({
+                                                    ...prev,
+                                                    [sectionNotificationKey]: !isExpanded,
+                                                  }))
+                                                }
+                                              >
+                                                <div className="flex flex-1 items-center justify-between gap-2">
+                                                  <div className="flex items-center gap-1">
+                                                    <span className="text-[11px] font-semibold">Notification by teacher</span>
+                                                    {hasImportantNotification && (
+                                                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                                                    )}
+                                                  </div>
+                                                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-500">
+                                                    {sortedSectionNotifications.length} update{sortedSectionNotifications.length === 1 ? "" : "s"}
+                                                  </span>
+                                                </div>
+                                                <ChevronDown
+                                                  className={`h-4 w-4 transition ${isExpanded ? "rotate-180" : ""}`}
+                                                />
+                                              </button>
+                                              {isExpanded && (
+                                                <div className="space-y-3 text-sm text-slate-800">
+                                                  {sortedSectionNotifications.map((notification) => {
+                                                    const metadataLine = getNotificationMetadataLine(
+                                                      notification.metadata ?? null,
+                                                    )
+                                                    const isNotificationHighlighted = highlightedRevisionId === notification.id
+                                                    return (
+                                                      <div
+                                                        key={notification.id}
+                                                        className={`rounded-2xl border px-3 py-3 transition ${
+                                                          isNotificationHighlighted
+                                                            ? "border-indigo-500 bg-indigo-50/70 shadow-inner shadow-indigo-100"
+                                                            : "border-slate-200 bg-slate-50/90"
+                                                        }`}
+                                                      >
+                                                        <div className="flex items-start justify-between gap-3">
+                                                          <p className="text-sm font-semibold text-slate-900">
+                                                            {notification.action_label ?? "Teacher update"}
+                                                          </p>
+                                                          {notification.created_at && (
+                                                            <span className="text-[11px] text-slate-500">
+                                                              {formatNotificationTime(notification.created_at)}
+                                                            </span>
+                                                          )}
+                                                        </div>
+                                                        <p className="mt-1 text-xs text-slate-600">
+                                                          {getNotificationMessage(notification)}
+                                                        </p>
+                                                        {metadataLine && (
+                                                          <p className="mt-1 text-[11px] text-slate-500">
+                                                            {metadataLine}
+                                                          </p>
+                                                        )}
+                                                        {(() => {
+                                                          const normalizedLabel = (notification.action_label ?? "").trim().toLowerCase()
+                                                          const isRevisionNote = normalizedLabel === "revision notes on weak areas."
+                                                          const isQuiz = normalizedLabel === "weakness practice quiz."
+                                                          const isExtraClass = normalizedLabel === "extra class."
+                                                          if (isRevisionNote) {
+                                                            return (
+                                                              <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                  setSelectedSectionId(section.id)
+                                                                  setSelectedQuestionForPopup(null)
+                                                                  setShowQuestionPopup(false)
+                                                                  setActiveRevisionNote(notification)
+                                                                  setHighlightedRevisionId(notification.id)
+                                                                }}
+                                                                className="mt-2 inline-flex text-[11px] font-semibold text-indigo-600 hover:text-indigo-500"
+                                                              >
+                                                                Start Revision
+                                                              </button>
+                                                            )
+                                                          }
+                                                          if (isQuiz) {
+                                                            return (
+                                                              <Link
+                                                                href="/playground"
+                                                                className="mt-2 inline-flex text-[11px] font-semibold text-indigo-600 hover:text-indigo-500"
+                                                              >
+                                                                Go to Playground
+                                                              </Link>
+                                                            )
+                                                          }
+                                                          if (isExtraClass) {
+                                                            return null
+                                                          }
+                                                          if (notification.curriculum_url) {
+                                                            return (
+                                                              <Link
+                                                                href={notification.curriculum_url}
+                                                                className="mt-2 inline-flex text-[11px] font-semibold text-indigo-600 hover:text-indigo-500"
+                                                              >
+                                                                View related section
+                                                              </Link>
+                                                            )
+                                                          }
+                                                          return null
+                                                        })()}
+                                                      </div>
+                                                    )
+                                                  })}
+                                                </div>
+                                              )}
+                                            </div>
+                                          )
+                                        })()
+                                      )}
 
-                                </>
-                                  )}
-
-                                  { !isSectionTopicEmpty && ( 
-                                    <>
-                                    
-
-                                  {allowAiAdaptiveQuiz && (
-                                  
-                                  <button
-                                    onClick={() => moduleAccessible && handleStartAdaptiveQuiz(section)}
-                                    disabled={generatingQuiz[section.id] || isAdaptiveQuizMode || !moduleAccessible}
-                                    className="w-full rounded-lg px-3 py-2 text-sm flex items-center gap-2 transition bg-gradient-to-r from-green-500 to-teal-500 text-white hover:from-green-600 hover:to-teal-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                                  >
-                                    {generatingQuiz[section.id] ? (
-                                      <>
-                                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                                        <div className="flex flex-1 items-center justify-between gap-2 text-left">
-                                          <span>{adaptiveButtonLoadingLabel}</span>
-                                          <RequirementChip completed={adaptiveCompleted} pendingLabel="Pending" />
+                                      {!hasAvailableQuizzes && adaptiveHistoryEntries.length > 0 && (
+                                        <div className="space-y-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-xs text-slate-600">
+                                          <div className="mb-2 text-[11px] font-semibold text-slate-700">
+                                            Adaptive quiz sessions
+                                          </div>
+                                          <div className="grid gap-2">
+                                            {adaptiveHistoryEntries.map((entry, entryIndex) => {
+                                              const sessionLabel = `AI Quiz Session ${adaptiveHistoryEntries.length - entryIndex}`;
+                                              const timestampLabel =
+                                                formatAdaptiveSessionTimestamp(entry.updatedAt) ||
+                                                formatAdaptiveSessionTimestamp(entry.createdAt) ||
+                                                "Recent session";
+                                              const isActive =
+                                                selectedAdaptiveSessionReview?.sessionId === entry.sessionId;
+                                              const isLoading =
+                                                loadingAdaptiveSessionSummary === entry.sessionId;
+                                              return (
+                                                <button
+                                                  key={entry.sessionId || `${section.id}-${entryIndex}`}
+                                                  onClick={() =>
+                                                    moduleAccessible &&
+                                                    handleViewAdaptiveSessionSummary(section.id, entry, entryIndex)
+                                                  }
+                                                  disabled={!moduleAccessible || isLoading}
+                                                  className={`w-full rounded-2xl border px-3 py-2 text-left font-semibold transition ${
+                                                    isActive
+                                                      ? "border-indigo-400 bg-indigo-50 text-indigo-800"
+                                                      : "border-slate-200 bg-white text-slate-700 hover:border-indigo-200 hover:bg-indigo-50"
+                                                  } ${isLoading ? "opacity-70 cursor-wait" : ""}`}
+                                                >
+                                                  <div className="flex items-center justify-between gap-3">
+                                                    <div>
+                                                      <div className="text-sm font-semibold text-slate-900">
+                                                        {sessionLabel}
+                                                      </div>
+                                                      <div className="text-[11px] text-slate-500">
+                                                        {timestampLabel}
+                                                      </div>
+                                                    </div>
+                                                    <span className="text-[11px] font-semibold text-slate-500">
+                                                      {entry.summary.score}% score
+                                                    </span>
+                                                  </div>
+                                                  <div className="mt-1 text-[11px] text-slate-500">
+                                                    {entry.summary.totalQuestions} questions · {entry.summary.correctAnswers}/{entry.summary.answeredQuestions} correct
+                                                    {isLoading && (
+                                                      <span className="ml-2 text-indigo-500">Loading...</span>
+                                                    )}
+                                                  </div>
+                                                </button>
+                                              );
+                                            })}
+                                          </div>
+                                          <div className="mt-2 rounded-2xl border border-slate-200 bg-white/90 p-3 text-[12px] text-slate-600 shadow-sm">
+                                            <div className="flex items-center justify-between text-[11px] font-semibold text-slate-500">
+                                              <span>Total across sessions</span>
+                                              <span>Passing ≥ 70%</span>
+                                            </div>
+                                            <div className="mt-2 flex items-end justify-between text-lg font-semibold text-slate-900">
+                                              <span>{adaptiveHistoryTotals.totalQuestions} questions</span>
+                                              <span>{adaptiveAggregateScore}% score</span>
+                                            </div>
+                                            <p className="mt-1 text-[11px] text-slate-500">
+                                              {adaptiveHistoryTotals.totalCorrect}/{adaptiveHistoryTotals.totalAnswered} correct answers
+                                            </p>
+                                            <div
+                                              className={`mt-2 inline-flex items-center justify-center rounded-full border px-3 py-0.5 text-[11px] font-semibold ${
+                                                adaptivePassing
+                                                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                                  : "border-red-200 bg-red-50 text-red-700"
+                                              }`}
+                                            >
+                                              {adaptivePassing ? "Passed" : "Needs improvement"}
+                                            </div>
+                                          </div>
                                         </div>
-                                      </>
-                                    ) : (
-                                      <>
-                                        <Activity className="h-4 w-4" />
-                                        <div className="flex flex-1 items-center justify-between gap-2 text-left">
-                                          <span>{adaptiveButtonLabel}</span>
-                                          <RequirementChip completed={adaptiveCompleted} pendingLabel="Pending" />
-                                        </div>
-                                      </>
-                                    )}
-                                  </button>
-                                  )}
-                                  </>
+                                      )}
+
+                                      {allowAiAdaptiveQuiz && (
+                                        <button
+                                          onClick={() => moduleAccessible && handleStartAdaptiveQuiz(section)}
+                                          disabled={generatingQuiz[section.id] || isAdaptiveQuizMode || !moduleAccessible}
+                                          className="w-full rounded-lg px-3 py-2 text-sm flex items-center gap-2 transition bg-gradient-to-r from-green-500 to-teal-500 text-white hover:from-green-600 hover:to-teal-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                          {generatingQuiz[section.id] ? (
+                                            <>
+                                              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                              <div className="flex flex-1 items-center justify-between gap-2 text-left">
+                                                <span>{adaptiveButtonLoadingLabel}</span>
+                                                <RequirementChip completed={adaptiveCompleted} pendingLabel="Pending" />
+                                              </div>
+                                            </>
+                                          ) : (
+                                            <>
+                                              <Activity className="h-4 w-4" />
+                                              <div className="flex flex-1 items-center justify-between gap-2 text-left">
+                                                <span>{adaptiveButtonLabel}</span>
+                                                <RequirementChip completed={adaptiveCompleted} pendingLabel="Pending" />
+                                              </div>
+                                            </>
+                                          )}
+                                        </button>
+                                      )}
+                                    </>
                                   )}
                                   {/* {adaptiveHistoryEntries.length > 0 && (
                                     <div className="space-y-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-xs text-slate-600">
@@ -18345,9 +18922,60 @@ export function SubjectLearningInterface({
                                       </div>
                                     </div>
                                   )} */}
-                                </div>
+                                 </div>
 
-                                {renderExerciseTiles()}
+                                  {/* {activeRevisionNote && activeRevisionNote.section_id === section.id && (
+                                    (() => {
+                                      const activeMetadataLine = getNotificationMetadataLine(
+                                        activeRevisionNote.metadata ?? null,
+                                      )
+                                      const isHighlighted = highlightedRevisionId === activeRevisionNote.id
+                                      return (
+                                        <div
+                                          className={`mt-4 space-y-3 rounded-2xl border px-4 py-3 text-slate-900 transition ${
+                                            isHighlighted
+                                              ? "border-2 border-indigo-500/80 bg-indigo-50/80 shadow-2xl"
+                                              : "border-slate-200 bg-white/90 shadow-sm"
+                                          }`}
+                                        >
+                                          <div className="flex items-center justify-between gap-4">
+                                            <div>
+                                              <p className="text-sm font-semibold">Revision notes</p>
+                                              {activeMetadataLine && (
+                                                <p className="text-[11px] text-slate-500">{activeMetadataLine}</p>
+                                              )}
+                                            </div>
+                                            <button
+                                              type="button"
+                                              className="text-xs font-semibold text-slate-500 transition hover:text-slate-700"
+                                              onClick={() => {
+                                                setActiveRevisionNote(null)
+                                                setHighlightedRevisionId(null)
+                                              }}
+                                            >
+                                              Close
+                                            </button>
+                                          </div>
+                                          <p className="text-sm leading-relaxed text-slate-800">
+                                            {activeRevisionNote.message ?? getNotificationMessage(activeRevisionNote)}
+                                          </p>
+                                          <div className="flex justify-end">
+                                            <button
+                                              type="button"
+                                              className="rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-[11px] font-semibold text-indigo-700 transition hover:border-indigo-300 hover:bg-indigo-100"
+                                              onClick={() => {
+                                                setHighlightedRevisionId(activeRevisionNote.id)
+                                              }}
+                                            >
+                                              Start revision
+                                            </button>
+                                          </div>
+                                        </div>
+                                      )
+                                    })()
+                                  )} */}
+
+                                 {renderExerciseTiles()}
 
                                 {allowAiExercise && !hasAdminSectionExercise && (
                                   <button

@@ -3,7 +3,7 @@ import { apiGet } from "@/lib/api";
 import { supabaseServer } from "@/lib/supabase-server";
 import { Sidebar } from "../../../../dashboard/sidebar";
 import { MobileSidebar } from "../../../../dashboard/mobile-sidebar";
-import Link from "next/link";
+import { CurriculumSectionSidebar } from "@/components/curriculum-section-sidebar";
 
 type Track = any;
 
@@ -20,6 +20,16 @@ export default async function SectionPage({ params }: { params: Promise<{ course
   const subjectModules = modules.filter((m: any) => m.subjectId === subjectId);
   const section = modules.flatMap((m: any) => m.sections || []).find((s: any) => s.id === sectionId);
   if (!section) redirect(`/curriculum/${courseId}/${subjectId}`);
+  const { data: notificationData, error: notificationError } = await sb
+    .from("student_notification")
+    .select("id, section_id, action_label, message, metadata, created_at")
+    .eq("student_id", user.id)
+    .order("created_at", { ascending: false })
+    .limit(100);
+  if (notificationError) {
+    console.error("Failed to load student notifications", notificationError);
+  }
+  const notifications = notificationData ?? [];
 
   return (
     <div className="mx-auto max-w-screen-2xl p-4 md:p-6">
@@ -33,20 +43,14 @@ export default async function SectionPage({ params }: { params: Promise<{ course
 
             {/* Actions removed per design */}
           </main>
-          <aside className="rounded-xl border border-border bg-white/70 p-4 backdrop-blur md:sticky md:top-16 md:h-[calc(100dvh-8rem)] md:overflow-auto">
-            <h2 className="text-sm font-medium">Course content</h2>
-            <div className="mt-2 space-y-2 text-sm">
-              {subjectModules.map((m: any, mi: number) => (
-                <details key={m.slug || mi} className="border border-border rounded-md" open={mi===0}>
-                  <summary className="px-3 py-2 font-medium cursor-pointer select-none">{m.title}</summary>
-                  <div className="px-3 pb-2 space-y-1">
-                    {(m.sections || []).map((s: any) => (
-                      <Link key={s.id} href={`/curriculum/${courseId}/${subjectId}/${s.id}/lecture`} className={`block rounded px-2 py-1 text-xs hover:bg-black/5 ${s.id===sectionId?'bg-black/5':''}`}>{s.title}</Link>
-                    ))}
-                  </div>
-                </details>
-              ))}
-            </div>
+          <aside>
+            <CurriculumSectionSidebar
+              courseId={courseId}
+              subjectId={subjectId}
+              sectionId={sectionId}
+              modules={subjectModules}
+              notifications={notifications}
+            />
           </aside>
         </div>
       </div>

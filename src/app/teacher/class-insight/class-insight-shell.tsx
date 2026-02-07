@@ -60,6 +60,12 @@ const FOCUS_GROUP_ACTIONS: FocusGroupAction[] = [
   },
 ]
 
+const INCOMPLETE_OBJECTIVES_ACTION: FocusGroupAction = {
+  label: "Send reminder",
+  buildMessage: (sectionTitle?: string) =>
+    `Reminder: Please finish ${describeSectionTitle(sectionTitle)} so you can wrap up this objective.`,
+}
+
 
 type SectionBucket = {
   id: string
@@ -353,10 +359,32 @@ export default function ClassInsightShell(props: Props) {
   const visibleFocusGroups = focusGroups.filter(
     (group) => !HIDDEN_FOCUS_GROUP_TITLES.has(group.title),
   )
+  const hiddenFocusGroups = focusGroups.filter((group) =>
+    HIDDEN_FOCUS_GROUP_TITLES.has(group.title),
+  )
+  const [activeHiddenFocusGroup, setActiveHiddenFocusGroup] = useState<string | null>(
+    hiddenFocusGroups[0]?.title ?? null,
+  )
+  useEffect(() => {
+    if (!hiddenFocusGroups.length) {
+      setActiveHiddenFocusGroup(null)
+      return
+    }
+    setActiveHiddenFocusGroup((prev) => {
+      if (prev && hiddenFocusGroups.some((group) => group.title === prev)) {
+        return prev
+      }
+      return hiddenFocusGroups[0].title
+    })
+  }, [hiddenFocusGroups])
+  const activeHiddenGroup =
+    hiddenFocusGroups.find((group) => group.title === activeHiddenFocusGroup) ??
+    hiddenFocusGroups[0] ??
+    null
   const [sectionActionLoading, setSectionActionLoading] = useState<Record<string, boolean>>({})
   const [selectedBucketIds, setSelectedBucketIds] = useState<Record<string, string | null>>({})
   const focusGroupSectionBuckets = useMemo(() => {
-    return visibleFocusGroups.reduce<Record<string, SectionBucket[]>>((acc, group) => {
+    return focusGroups.reduce<Record<string, SectionBucket[]>>((acc, group) => {
       const rows = group.tableRows ?? []
       type BucketAccumulator = {
         id: string
@@ -686,6 +714,277 @@ export default function ClassInsightShell(props: Props) {
     },
     [],
   )
+
+  const renderFocusGroupSectionPanel = (
+    group: FocusGroup,
+    options?: { id?: string },
+  ) => {
+    const sectionBuckets = focusGroupSectionBuckets[group.title] ?? []
+    const studentCount = Array.from(
+      new Set((group.tableRows ?? []).map((row) => row.student_id)),
+    ).length
+    const totalEntries = group.tableRows?.length ?? 0
+    const selectedBucketIdForGroup =
+      selectedBucketIds[group.title] ?? sectionBuckets[0]?.id ?? null
+    const targetBucket =
+      sectionBuckets.find((bucket) => bucket.id === selectedBucketIdForGroup) ??
+      sectionBuckets[0] ??
+      null
+
+    const meta = (() => {
+      switch (group.title) {
+        case "Stuck Students":
+          return {
+            label: "Stuck students",
+            headline: "Weak sections needing attention",
+            copy:
+              "Students whose mastery is below 50% appear below; each section groups students falling short together.",
+            entriesLabel: "weak entries",
+            emptyMessage: "No sections surpassing the readiness threshold yet.",
+          }
+        case "Ready for Extension":
+          return {
+            label: "Ready for extension",
+            headline: "Stretch sections primed for enrichment",
+            copy:
+              "Students with strong mastery are grouped below; use the section buckets to surface stretch opportunities.",
+            entriesLabel: "strong entries",
+            emptyMessage: "No extension-ready sections yet.",
+          }
+        case "Incomplete Objectives":
+          return {
+            label: "Incomplete objectives",
+            headline: "Work in progress",
+            copy:
+              "Only sections where adaptive or exercises remain in progress show below; nudges keep students moving forward.",
+            entriesLabel: "in-progress entries",
+            emptyMessage: "No in-progress sections yet.",
+          }
+        default:
+          return {
+            label: "Student buckets",
+            headline: group.description ?? "Section clusters",
+            copy: group.description ?? "Students grouped by section context.",
+            entriesLabel: "entries",
+            emptyMessage: "No sections matching this bucket yet.",
+          }
+      }
+    })()
+    const sectionActions =
+      group.title === "Incomplete Objectives"
+        ? [INCOMPLETE_OBJECTIVES_ACTION]
+        : group.title === "Ready for Extension"
+        ? []
+        : FOCUS_GROUP_ACTIONS
+
+    return (
+      <div
+        {...(options?.id ? { id: options.id } : {})}
+        className="space-y-4 border-slate-200/80 px-4 py-2 text-sm text-slate-500"
+      >
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-slate-100 bg-slate-50/80 p-4 shadow-sm">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.1em] text-slate-500">{meta.label}</p>
+                <p className="text-sm font-semibold text-slate-900">{meta.headline}</p>
+                <p className="text-xs text-slate-500">{meta.copy}</p>
+              </div>
+              <div className="text-right text-xs text-slate-500">
+                {studentCount} student{studentCount === 1 ? "" : "s"} - {totalEntries}{" "}
+                {meta.entriesLabel}
+              </div>
+            </div>
+          </div>
+          {sectionBuckets.length ? (
+            <div className="space-y-3">
+              {sectionBuckets.map((bucket) => {
+                const isSelected = bucket.id === selectedBucketIdForGroup
+                const bucketClass = isSelected
+                  ? "border-emerald-300 bg-emerald-50"
+                  : "border-slate-100 bg-white"
+                return (
+                  <div
+                    key={bucket.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => handleBucketSelect(group.title, bucket.id)}
+                    className={`rounded-2xl border ${bucketClass} p-4 shadow-sm focus-visible:ring-2 focus-visible:ring-emerald-200`}
+                  >
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">
+                          Targeted section
+                        </p>
+                        <p className="text-sm font-semibold text-slate-900">
+                          {bucket.sectionTitle}
+                        </p>
+                        {isSelected && (
+                          <p className="text-[11px] font-semibold text-emerald-600">Selected</p>
+                        )}
+                        <p className="text-xs text-slate-500">
+                          {bucket.students.length} student{bucket.students.length === 1 ? "" : "s"} -
+                          {bucket.averageScore !== null ? ` avg ${bucket.averageScore}%` : " score pending"}
+                        </p>
+                      </div>
+                      <div className="text-xs text-slate-500">
+                        {bucket.hintsTotal} hint{bucket.hintsTotal === 1 ? "" : "s"}
+                      </div>
+                    </div>
+                    <div className="mt-3 space-y-2 text-sm text-slate-700">
+                      {bucket.students.map((row) => {
+                        const scoreLabel =
+                          row.section_score !== null && row.section_score !== undefined
+                            ? `${Math.round(row.section_score)}%`
+                            : "--"
+                        return (
+                          <div
+                            key={`${row.student_id}-${row.section_id ?? row.section_title}`}
+                            className="flex items-center justify-between border-b border-slate-200/70 pb-2 last:border-b-0 last:pb-0"
+                          >
+                            <div>
+                              <p className="font-semibold text-slate-900">{row.student_name}</p>
+                              <p className="text-[11px] text-slate-500">Hints: {row.hints ?? "--"}</p>
+                            </div>
+                            <span className="text-[11px] font-semibold text-rose-600">
+                              {scoreLabel}
+                            </span>
+                          </div>
+                        )
+                      })}
+                    </div>
+                    <div className="mt-3 flex flex-col gap-2 border-t border-dashed border-slate-200 pt-3 text-xs text-slate-500">
+                      {(() => {
+                        const actions = sectionActionLog[bucket.id] ?? []
+                        if (!actions.length) {
+                          return <p>No actions taken yet.</p>
+                        }
+                        const last = actions[0]
+                        return (
+                          <div className="space-y-1">
+                            <p className="text-[11px] text-slate-500">
+                              Last action:{" "}
+                              <span className="text-[11px] font-semibold text-slate-900">
+                                {last.label}
+                              </span>
+                            </p>
+                            <p className="text-[11px] text-slate-500">
+                              Last action time:{" "}
+                              <span className="text-[11px] font-semibold text-slate-900">
+                                {formatTimestamp(last.timestamp)}
+                              </span>
+                            </p>
+                          </div>
+                        )
+                      })()}
+                      <button
+                        type="button"
+                        disabled={actionHistoryLoadingFor === bucket.id}
+                        onClick={() => {
+                          setActionLogBucketId(bucket.id)
+                          const sectionId =
+                            bucket.students.map((row) => row.section_id).find(Boolean) ?? null
+                          void fetchSectionHistory(bucket.id, sectionId)
+                        }}
+                        style={{ float: "left", width: "200px" }}
+                        className="inline-flex w-full items-center justify-center rounded-2xl border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-900 shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {actionHistoryLoadingFor === bucket.id ? "Loading..." : "View action history"}
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            <p className="text-xs text-slate-500">{meta.emptyMessage}</p>
+          )}
+        </div>
+        <div className="text-xs text-slate-500">
+          {targetBucket
+            ? `Selected section: ${targetBucket.sectionTitle}`
+            : "Select a section to notify students at scale."}
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {sectionActions.map((action) => {
+            const actionKey = `${group.title}-${targetBucket?.id ?? "none"}-${action.label}`
+            const isLoading = Boolean(sectionActionLoading[actionKey])
+            return (
+              <button
+                key={actionKey}
+                type="button"
+                disabled={!targetBucket || isLoading}
+                onClick={async () => {
+                  if (!targetBucket) return
+                  let classTiming: string | undefined
+                  if (action.requiresTiming) {
+                    const timingResponse =
+                      typeof window !== "undefined"
+                        ? window.prompt(action.timingPrompt ?? "When is the extra class happening?")
+                        : null
+                    if (!timingResponse) {
+                      toast.info("Class timing is required to send this notification.")
+                      return
+                    }
+                    const trimmedTiming = timingResponse.trim()
+                    if (!trimmedTiming) {
+                      toast.info("Class timing is required to send this notification.")
+                      return
+                    }
+                    classTiming = trimmedTiming
+                  }
+                  const context = classTiming ? { classTiming } : undefined
+                  void handleSectionAction(
+                    group.title,
+                    targetBucket,
+                    action.label,
+                    action.buildMessage(targetBucket.sectionTitle, context),
+                    action.needsRevisionNotes,
+                    classTiming,
+                  )
+                }}
+                className={`rounded-1xl border border-slate-200 bg-white px-3 py-2 text-[12px] font-semibold text-slate-900 transition hover:border-slate-300 ${
+                  !targetBucket || isLoading ? "cursor-not-allowed opacity-60" : ""
+                }`}
+              >
+                {isLoading ? "Sending..." : action.label}
+              </button>
+            )
+          })}
+        </div>
+        {group.title !== "Stuck Students" && group.strugglingActions && (
+          <div className="mt-2 space-y-1 text-left text-sm">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-400">
+              Weak focus actions
+            </p>
+            <p className="text-[11px] text-slate-500">
+              Only students flagged as weak are shown above. Pick an action to re-engage them.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {group.strugglingActions.map((actionType) => (
+                <button
+                  key={`${group.title}-${actionType}`}
+                  type="button"
+                  onClick={() => handleFocusGroupAction(group.title, actionType)}
+                  className="flex max-w-[220px] flex-col items-start gap-0.5 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-900 transition hover:border-slate-300"
+                >
+                  <span>{strugglingActionCopy[actionType].label}</span>
+                  <span className="text-[10px] font-normal text-slate-500">
+                    {strugglingActionCopy[actionType].description}
+                  </span>
+                </button>
+              ))}
+            </div>
+            {focusGroupActionHistory[group.title] && (
+              <p className="text-[10px] text-slate-500">
+                Last action: {focusGroupActionHistory[group.title]}
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+    )
+  }
 
   const chartGradient = useMemo(() => {
     if (!totalAiUsage) return "conic-gradient(#e5e7eb, #cbd5f5)"
@@ -1031,7 +1330,7 @@ export default function ClassInsightShell(props: Props) {
                           <button
                             type="button"
                             onClick={() => handleSectionProgressOpen(tile)}
-                            style={{ background: "linear-gradient(90deg, #6214b6 0%, #3a0656 100%)" }}
+                            style={{ background: "linear-gradient(90deg, #605f62 0%, #5b595c 100%)", margin:"0px 0px 0px 15px" }}
                             className="mt-3 inline-flex items-center justify-center text-white rounded-full border border-slate-200 px-5 py-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-sky-500 transition hover:border-sky-400 hover:text-sky-700"
                             aria-label={`Open section progress for ${tile.topic}`}
                           >
@@ -1316,7 +1615,7 @@ export default function ClassInsightShell(props: Props) {
                                                                       <p className="text-[12px] font-semibold text-rose-600">
                                                                         Need help
                                                                       </p>
-                                                                      <div className="grid gap-2 text-[10px] sm:grid-cols-2">
+                                                                      {/* <div className="grid gap-2 text-[10px] sm:grid-cols-2">
                                                                         {(strugglingActionTypes).map((actionType) => (
                                                                           <button
                                                                             key={actionType}
@@ -1339,7 +1638,7 @@ export default function ClassInsightShell(props: Props) {
                                                                             </span>
                                                                           </button>
                                                                         ))}
-                                                                      </div>
+                                                                      </div> */}
                                                                       {lastStudentAction && (
                                                                         <p className="text-[10px] text-slate-800">
                                                                           Last action: {lastStudentAction}
@@ -1638,17 +1937,6 @@ export default function ClassInsightShell(props: Props) {
                 const containerClass = isOpen
                   ? "border-slate-300 bg-slate-50"
                   : "border-slate-200 bg-white"
-                const sectionBuckets = focusGroupSectionBuckets[group.title] ?? []
-                const studentCount = Array.from(
-                  new Set((group.tableRows ?? []).map((row) => row.student_id)),
-                ).length
-                const totalEntries = group.tableRows?.length ?? 0
-                const selectedBucketIdForGroup =
-                  selectedBucketIds[group.title] ?? sectionBuckets[0]?.id ?? null
-                const targetBucket =
-                  sectionBuckets.find((bucket) => bucket.id === selectedBucketIdForGroup) ??
-                  sectionBuckets[0] ??
-                  null
                 return (
                   <div
                     key={group.title}
@@ -1671,234 +1959,55 @@ export default function ClassInsightShell(props: Props) {
                         {isOpen ? "Open" : "Details"}
                       </span>
                     </button>
-                    {isOpen && (
-                      <div
-                        id={`focus-${group.title}`}
-                        className="space-y-4 border-t border-slate-200/80 px-5 py-4 text-sm text-slate-500"
-                      >
-                        <div className="space-y-4">
-                          <div className="rounded-2xl border border-slate-100 bg-slate-50/80 p-4 shadow-sm">
-                            <div className="flex items-start justify-between gap-4">
-                              <div>
-                                <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Stuck students</p>
-                                <p className="text-sm font-semibold text-slate-900">Weak sections needing attention</p>
-                                <p className="text-xs text-slate-500">
-                                  Students whose mastery is below 50% appear below; each section groups students falling short together.
-                                </p>
-                              </div>
-                              <div className="text-right text-xs text-slate-500">
-                                {studentCount} students - {totalEntries} weak entries
-                              </div>
-                            </div>
-                          </div>
-                          {sectionBuckets.length ? (
-                            <div className="space-y-3">
-                              {sectionBuckets.map((bucket) => {
-                                const isSelected = bucket.id === selectedBucketIdForGroup
-                                const bucketClass = isSelected
-                                  ? "border-emerald-300 bg-emerald-50"
-                                  : "border-slate-100 bg-white"
-                                return (
-                                  <div
-                                    key={bucket.id}
-                                    role="button"
-                                    tabIndex={0}
-                                    onClick={() => handleBucketSelect(group.title, bucket.id)}
-                                    className={`rounded-2xl border ${bucketClass} p-4 shadow-sm focus-visible:ring-2 focus-visible:ring-emerald-200`}
-                                  >
-                                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                                      <div>
-                                        <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">
-                                          Targeted section
-                                        </p>
-                                        <p className="text-sm font-semibold text-slate-900">
-                                          {bucket.sectionTitle}
-                                        </p>
-                                        {isSelected && (
-                                          <p className="text-[11px] font-semibold text-emerald-600">
-                                            Selected
-                                          </p>
-                                        )}
-                                        <p className="text-xs text-slate-500">
-                                          {bucket.students.length} student
-                                          {bucket.students.length === 1 ? "" : "s"} -
-                                          {bucket.averageScore !== null
-                                            ? ` avg ${bucket.averageScore}%`
-                                            : " score pending"}
-                                        </p>
-                                      </div>
-                                      <div className="text-xs text-slate-500">
-                                        {bucket.hintsTotal} hint{bucket.hintsTotal === 1 ? "" : "s"}
-                                      </div>
-                                    </div>
-                                    <div className="mt-3 space-y-2 text-sm text-slate-700">
-                                      {bucket.students.map((row) => {
-                                        const scoreLabel =
-                                          row.section_score !== null && row.section_score !== undefined
-                                            ? `${Math.round(row.section_score)}%`
-                                            : "--"
-                                        return (
-                                          <div
-                                            key={`${row.student_id}-${row.section_id ?? row.section_title}`}
-                                            className="flex items-center justify-between border-b border-slate-200/70 pb-2 last:border-b-0 last:pb-0"
-                                          >
-                                            <div>
-                                              <p className="font-semibold text-slate-900">{row.student_name}</p>
-                                              <p className="text-[11px] text-slate-500">
-                                                Hints: {row.hints ?? "--"}
-                                              </p>
-                                            </div>
-                                            <span className="text-[11px] font-semibold text-rose-600">
-                                              {scoreLabel}
-                                            </span>
-                                          </div>
-                                        )
-                                      })}
-                                    </div>
-                                    <div className="mt-3 flex flex-col gap-2 border-t border-dashed border-slate-200 pt-3 text-xs text-slate-500">
-                                      {(() => {
-                                        const actions = sectionActionLog[bucket.id] ?? []
-                                        if (!actions.length) {
-                                          return <p>No actions taken yet.</p>
-                                        }
-                                        const last = actions[0]
-                                        return (
-                                          <div className="space-y-1">
-                                          <p className="text-[11px] text-slate-500">
-                                            Last action: <span className="text-[11px] font-semibold text-slate-900">{last.label}</span>
-                                          </p>
-                                          <p className="text-[11px] text-slate-500">
-                                            Last action time: <span className="text-[11px] font-semibold text-slate-900">{formatTimestamp(last.timestamp)}</span>
-                                          </p>
-                                          {/* <p className="text-[11px] leading-snug text-slate-600">{last.message}</p> */}
-                                          {/* <p className="text-[10px] text-slate-400">
-                                            Teacher: You · {formatTimestamp(last.timestamp)}
-                                          </p> */}
-                                        </div>
-                                        )
-                                      })()}
-                                      <button
-                                        type="button"
-                                        disabled={actionHistoryLoadingFor === bucket.id}
-                                        onClick={() => {
-                                          setActionLogBucketId(bucket.id)
-                                          const sectionId =
-                                            bucket.students
-                                              .map((row) => row.section_id)
-                                              .find(Boolean) ?? null
-                                          void fetchSectionHistory(bucket.id, sectionId)
-                                        }}
-                                        style={{ float: "left", width: "200px" }}
-                                        className="inline-flex w-full items-center justify-center rounded-2xl border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-900 shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
-                                      >
-                                        {actionHistoryLoadingFor === bucket.id
-                                          ? "Loading..."
-                                          : "View action history"}
-                                      </button>
-                                    </div>
-                                  </div>
-                                )
-                              })}
-                            </div>
-                          ) : (
-                            <p className="text-xs text-slate-500">
-                              No sections surpassing the readiness threshold yet.
-                            </p>
-                          )}
-                        </div>
-                        <div className="text-xs text-slate-500">
-                          {targetBucket
-                            ? `Selected section: ${targetBucket.sectionTitle}`
-                            : "Select a section to notify students at scale."}
-                        </div>
-                        <div className="mt-4 flex flex-wrap gap-2">
-                          {FOCUS_GROUP_ACTIONS.map((action) => {
-                            const actionKey = `${group.title}-${targetBucket?.id ?? "none"}-${action.label}`
-                            const isLoading = Boolean(sectionActionLoading[actionKey])
-                            return (
-                              <button
-                                key={actionKey}
-                                type="button"
-                                disabled={!targetBucket || isLoading}
-                                onClick={async () => {
-                                  if (!targetBucket) return
-                                  let classTiming: string | undefined
-                                  if (action.requiresTiming) {
-                                    const timingResponse =
-                                      typeof window !== "undefined"
-                                        ? window.prompt(action.timingPrompt ?? "When is the extra class happening?")
-                                        : null
-                                    if (!timingResponse) {
-                                      toast.info("Class timing is required to send this notification.")
-                                      return
-                                    }
-                                    const trimmedTiming = timingResponse.trim()
-                                    if (!trimmedTiming) {
-                                      toast.info("Class timing is required to send this notification.")
-                                      return
-                                    }
-                                    classTiming = trimmedTiming
-                                  }
-                                  const context = classTiming ? { classTiming } : undefined
-                                  void handleSectionAction(
-                                    group.title,
-                                    targetBucket,
-                                    action.label,
-                                    action.buildMessage(targetBucket.sectionTitle, context),
-                                    action.needsRevisionNotes,
-                                    classTiming,
-                                  )
-                                }}
-                                className={`rounded-2xl border border-slate-200 bg-white px-3 py-2 text-[12px] font-semibold text-slate-900 transition hover:border-slate-300 ${
-                                  !targetBucket || isLoading ? "cursor-not-allowed opacity-60" : ""
-                                }`}
-                              >
-                                {isLoading ? "Sending..." : action.label}
-                              </button>
-                            )
-                          })}
-                        </div>
-                        {group.title !== "Stuck Students" && group.strugglingActions && (
-                          <div className="mt-2 space-y-1 text-left text-sm">
-                            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
-                              Weak focus actions
-                            </p>
-                            <p className="text-[11px] text-slate-500">
-                              Only students flagged as weak are shown above. Pick an action to re-engage them.
-                            </p>
-                            <div className="flex flex-wrap gap-2">
-                              {group.strugglingActions.map((actionType) => (
-                                <button
-                                  key={`${group.title}-${actionType}`}
-                                  type="button"
-                                  onClick={() => handleFocusGroupAction(group.title, actionType)}
-                                  className="flex max-w-[220px] flex-col items-start gap-0.5 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-900 transition hover:border-slate-300"
-                                >
-                                  <span>{strugglingActionCopy[actionType].label}</span>
-                                  <span className="text-[10px] font-normal text-slate-500">
-                                    {strugglingActionCopy[actionType].description}
-                                  </span>
-                                </button>
-                              ))}
-                            </div>
-                            {focusGroupActionHistory[group.title] && (
-                              <p className="text-[10px] text-slate-500">
-                                Last action: {focusGroupActionHistory[group.title]}
-                              </p>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    )}
+                    {isOpen && renderFocusGroupSectionPanel(group, { id: `focus-${group.title}` })}
                   </div>
                 )
               })
-            ) : (
-              <p className="text-xs text-slate-500">
-                Focus groups are built automatically after the first student activity sync.
-              </p>
-            )}
+              ) : (
+                <p className="text-xs text-slate-500">
+                  Focus groups are built automatically after the first student activity sync.
+                </p>
+              )}
           </div>
+          {hiddenFocusGroups.length ? (
+            <div className="mt-6 rounded-1xl border border-slate-200/80 bg-slate-50/80 p-4 shadow-sm">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  {/* <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">
+                    Opportunity tabs
+                  </p> */}
+                  <p className="text-sm font-semibold text-slate-900">
+                    {activeHiddenGroup?.description ?? "Additional focus buckets"}
+                  </p>
+                </div>
+                <span className="text-[11px] text-slate-500">Ready for next steps</span>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2 border-b border-slate-200/80 pb-2 text-[11px] uppercase tracking-[0.3em]">
+                {hiddenFocusGroups.map((group) => {
+                  const isSelected = activeHiddenGroup?.title === group.title
+                  return (
+                    <button
+                      key={group.title}
+                      type="button"
+                      onClick={() => setActiveHiddenFocusGroup(group.title)}
+                      className={`rounded-full px-3 py-1 font-semibold transition ${
+                        isSelected
+                          ? "border border-emerald-300 bg-emerald-50 text-emerald-600"
+                          : "border border-transparent text-slate-500 hover:text-slate-900"
+                      }`}
+                    >
+                      {group.title}
+                    </button>
+                  )
+                })}
+              </div>
+              {activeHiddenGroup && (
+                <div className="mt-4">
+                  {renderFocusGroupSectionPanel(activeHiddenGroup)}
+                </div>
+              )}
+            </div>
+          ) : null}
           {jarvisLog && (
             <p className="mt-4 text-xs text-slate-500">{jarvisLog}</p>
           )}

@@ -226,7 +226,7 @@ export function PracticeMentorChat(props: PracticeMentorChatProps) {
   return (
     <div className="mx-auto max-w-6xl bg-white p-6 shadow-sm">
       {/* header */}
-      <div className="flex items-start justify-between">
+      {/* <div className="flex items-start justify-between">
         <div>
           {resolvedExerciseDescription ? (
             <p className="mt-2 text-md text-600">{resolvedExerciseDescription}</p>
@@ -240,10 +240,10 @@ export function PracticeMentorChat(props: PracticeMentorChatProps) {
           ) : null}
 
         </div>
-      </div>
+      </div> */}
 
       {/* question chip row */}
-      {questions?.length ? (
+      {/* {questions?.length ? (
         <div className="mt-5 rounded-2xl border border-gray-200 bg-white/60 p-4">
           <div className="flex flex-wrap gap-3">
             {questions.map((q, i) => {
@@ -273,10 +273,10 @@ export function PracticeMentorChat(props: PracticeMentorChatProps) {
             })}
           </div>
         </div>
-      ) : null}
+      ) : null} */}
 
       {/* question panel */}
-      <section className="mt-6 rounded-2xl border border-gray-200 bg-white px-6 py-5">
+      {/* <section className="mt-6 rounded-2xl border border-gray-200 bg-white px-6 py-5">
         <div className="prose mt-3 max-w-none text-gray-800 prose-p:leading-relaxed">
           {guidingQuestion ? (
             <p
@@ -288,14 +288,14 @@ export function PracticeMentorChat(props: PracticeMentorChatProps) {
           )}
           
         </div>
-      </section>
+      </section> */}
 
       {/* personalised mentor (stacked below) */}
       <section className="mt-6 rounded-2xl border border-gray-200 bg-white">
         <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
           <div className="flex items-center gap-2">
             <MessageCircle className="h-5 w-5 text-indigo-600" />
-            <h3 className="text-sm font-semibold text-gray-900">Personalised Mentor</h3>
+            <h3 className="text-sm font-semibold text-gray-900">Personalised Mentor - Revision Notes </h3>
           </div>
           <div className="flex items-center gap-3">
             {errorMessage ? (
@@ -322,7 +322,7 @@ export function PracticeMentorChat(props: PracticeMentorChatProps) {
           {(session?.chat?.messages ?? []).length === 0 ? (
             <p className="text-sm text-gray-500">
               {emptyStateMessage ||
-                "Start the conversation by sharing how you would approach this question. The mentor will help you refine your hypotheses and surface stronger analysis questions."}
+                "Start the conversation by describing how you understand these revision notes. The mentor will help you refine your hypotheses and surface stronger analysis questions."}
             </p>
           ) : (
             <ul className="space-y-3">

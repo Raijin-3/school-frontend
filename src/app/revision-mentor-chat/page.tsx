@@ -45,7 +45,6 @@ interface PracticeMentorChatProps {
   onSelectQuestion: (questionId: string, exerciseId?: string) => void;
   onLoadSession: (questionId: string, exerciseId?: string) => void;
   onSendMessage: (questionId: string, message: string, exerciseId?: string) => Promise<void> | void;
-  emptyStateMessage?: string;
 }
 
 /* ---------------- helpers ---------------- */
@@ -133,7 +132,6 @@ export function PracticeMentorChat(props: PracticeMentorChatProps) {
     onSelectQuestion,
     onLoadSession,
     onSendMessage,
-    emptyStateMessage,
   } = props;
 
   /* ---------- selection + session bootstrap ---------- */
@@ -321,8 +319,8 @@ export function PracticeMentorChat(props: PracticeMentorChatProps) {
         <div className="h-[40vh] min-h-[280px] overflow-y-auto px-6 py-4">
           {(session?.chat?.messages ?? []).length === 0 ? (
             <p className="text-sm text-gray-500">
-              {emptyStateMessage ||
-                "Start the conversation by sharing how you would approach this question. The mentor will help you refine your hypotheses and surface stronger analysis questions."}
+              Start the conversation by describing how you understand these revision notes. The mentor will help you refine
+              your hypotheses and surface stronger analysis questions.
             </p>
           ) : (
             <ul className="space-y-3">
