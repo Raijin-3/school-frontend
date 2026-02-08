@@ -17,6 +17,9 @@ import type {
   StudentAiUsage,
   StrugglingActionType,
   SubjectOption,
+  InProgressStudentSection,
+  NotStartedStudentSection,
+  StudentSectionStatus,
   SuggestedAction,
 } from "./types"
 
@@ -25,7 +28,10 @@ const statusToneClasses: Record<"Completed" | "In progress", string> = {
   "In progress": "text-amber-500",
 }
 
-const HIDDEN_FOCUS_GROUP_TITLES = new Set(["Ready for Extension", "Incomplete Objectives"])
+const statusToneClass = (status?: string | null) =>
+  status === "Completed" || status === "In progress" ? statusToneClasses[status] : "text-slate-500"
+
+const HIDDEN_FOCUS_GROUP_TITLES = new Set(["Ready for Extension"])
 
 const describeSectionTitle = (sectionTitle?: string) => sectionTitle ?? "this section"
 
@@ -35,6 +41,7 @@ type FocusGroupAction = {
   requiresTiming?: boolean
   timingPrompt?: string
   needsRevisionNotes?: boolean
+  description?: string
 }
 
 const FOCUS_GROUP_ACTIONS: FocusGroupAction[] = [
@@ -43,11 +50,13 @@ const FOCUS_GROUP_ACTIONS: FocusGroupAction[] = [
     buildMessage: (sectionTitle?: string) =>
       "Revision notes on " + describeSectionTitle(sectionTitle) + " are ready - review them to shore up the weak areas.",
     needsRevisionNotes: true,
+    description: "Share focused revision notes so students can rework the weak concepts.",
   },
   {
     label: "Weakness Practice Quiz.",
     buildMessage: (sectionTitle?: string) =>
       "A weakness practice quiz for " + describeSectionTitle(sectionTitle) + " is queued so you can boost that section.",
+    description: "Queue a short practice quiz that targets the same struggling skills.",
   },
   {
     label: "Extra class.",
@@ -57,6 +66,8 @@ const FOCUS_GROUP_ACTIONS: FocusGroupAction[] = [
       const timingSuffix = context?.classTiming ? " at " + context.classTiming : ""
       return "To improve " + describeSectionTitle(sectionTitle) + ", your teacher will take an extra class" + timingSuffix + " - please be ready."
     },
+    description:
+      "Notify students about the extra class; you will be asked for the timing when you send this notification.",
   },
 ]
 
@@ -97,6 +108,8 @@ type Props = {
   aiHighlights: AiHighlight[]
   totalHintsUsed: number
   studentAiUsage: StudentAiUsage[]
+  inProgressStudentSections: InProgressStudentSection[]
+  notStartedStudentSections: NotStartedStudentSection[]
   focusGroups: FocusGroup[]
   suggestedActions: SuggestedAction[]
   jarvisLog: string
@@ -117,6 +130,84 @@ const toneColors: Record<AiUsageSegment["tone"], string> = {
   green: "#22c55e",
   amber: "#f59e0b",
   rose: "#fb7185",
+}
+
+type SectionStudentGroup = {
+  sectionId: string
+  sectionTitle?: string
+  students: StudentSectionStatus[]
+}
+
+const toFocusGroupTableRow = (row: StudentSectionStatus): FocusGroupTableRow => ({
+  student_id: row.student_id,
+  student_name: row.student_name,
+  section_title: row.section_title,
+  section_score: row.section_score ?? null,
+  mastery: row.section_score ?? null,
+  hints: row.hints ?? 0,
+  section_id: row.section_id,
+  module_id: row.module_id ?? null,
+  adaptive_status: row.adaptive_status ?? null,
+  exercise_status: row.exercise_status ?? null,
+  adaptive_last_attempted_at: row.adaptive_last_attempted_at ?? null,
+  exercise_last_attempted_at: row.exercise_last_attempted_at ?? null,
+  exercise_question_count: null,
+  exercise_attempted_questions: row.exercise_attempted_questions ?? null,
+})
+
+const groupSectionRows = (rows: StudentSectionStatus[]): SectionStudentGroup[] => {
+  const map = new Map<string, SectionStudentGroup>()
+  for (const row of rows) {
+    const key = row.section_id ?? row.section_title ?? "section"
+    if (!map.has(key)) {
+      map.set(key, {
+        sectionId: key,
+        sectionTitle: row.section_title,
+        students: [],
+      })
+    }
+    map.get(key)!.students.push(row)
+  }
+  return Array.from(map.values())
+}
+
+const buildBucketFromSectionGroup = (section: SectionStudentGroup): SectionBucket => {
+  const students = section.students.map(toFocusGroupTableRow)
+  const hintsTotal = students.reduce((sum, row) => sum + (row.hints ?? 0), 0)
+  const scoreEntries = students
+    .map((row) => row.section_score)
+    .filter((value): value is number => typeof value === "number")
+  const averageScore = scoreEntries.length
+    ? Math.round(scoreEntries.reduce((sum, value) => sum + value, 0) / scoreEntries.length)
+    : null
+  return {
+    id: section.sectionId,
+    sectionTitle: section.sectionTitle ?? "Section",
+    students,
+    hintsTotal,
+    averageScore,
+  }
+}
+
+const buildAggregateBucket = (sections: SectionStudentGroup[]): SectionBucket | null => {
+  if (!sections.length) return null
+  const rows = sections.flatMap((section) => section.students)
+  if (!rows.length) return null
+  const students = rows.map(toFocusGroupTableRow)
+  const hintsTotal = students.reduce((sum, row) => sum + (row.hints ?? 0), 0)
+  const scoreEntries = students
+    .map((row) => row.section_score)
+    .filter((value): value is number => typeof value === "number")
+  const averageScore = scoreEntries.length
+    ? Math.round(scoreEntries.reduce((sum, value) => sum + value, 0) / scoreEntries.length)
+    : null
+  return {
+    id: "in-progress-aggregate",
+    sectionTitle: sections[0].sectionTitle ?? "Section",
+    students,
+    hintsTotal,
+    averageScore,
+  }
 }
 
 const sectionScoreToneClasses: Record<"strong" | "average" | "weak" | "notStarted", string> = {
@@ -317,6 +408,8 @@ export default function ClassInsightShell(props: Props) {
     aiHighlights,
     totalHintsUsed,
     studentAiUsage,
+    inProgressStudentSections,
+    notStartedStudentSections,
     focusGroups,
     suggestedActions,
     jarvisLog,
@@ -767,15 +860,199 @@ export default function ClassInsightShell(props: Props) {
             copy: group.description ?? "Students grouped by section context.",
             entriesLabel: "entries",
             emptyMessage: "No sections matching this bucket yet.",
-          }
+        }
       }
     })()
+    const reminderSections =
+      group.title === "Incomplete Objectives"
+        ? groupSectionRows(inProgressStudentSections)
+        : []
+    const inProgressSections =
+      group.title === "Incomplete Objectives"
+        ? groupSectionRows(resolvedInProgressRows)
+        : []
     const sectionActions =
       group.title === "Incomplete Objectives"
         ? [INCOMPLETE_OBJECTIVES_ACTION]
         : group.title === "Ready for Extension"
         ? []
         : FOCUS_GROUP_ACTIONS
+    const notStartedSections =
+      group.title === "Incomplete Objectives"
+        ? groupSectionRows(resolvedNotStartedRows)
+        : []
+    const totalInProgressStudents = inProgressSections.reduce(
+      (sum, section) => sum + section.students.length,
+      0,
+    )
+    const totalNotStartedStudents = notStartedSections.reduce(
+      (sum, section) => sum + section.students.length,
+      0,
+    )
+
+    const fallbackBucket =
+      group.title === "Incomplete Objectives"
+        ? buildAggregateBucket(inProgressSections)
+        : null
+    const effectiveBucket =
+      group.title === "Incomplete Objectives" ? fallbackBucket : targetBucket ?? fallbackBucket
+    const reminderDisabled = !effectiveBucket
+
+    const renderSectionActionControl = (
+      action: FocusGroupAction,
+      showDescription = false,
+      wrapperClass?: string,
+    ) => {
+      const bucketId = effectiveBucket?.id ?? "none"
+      const actionKey = `${group.title}-${bucketId}-${action.label}`
+      const isLoading = Boolean(sectionActionLoading[actionKey])
+      const descriptionCopy =
+        showDescription &&
+        (action.description ?? action.buildMessage(effectiveBucket?.sectionTitle))
+      return (
+        <div key={actionKey} className={wrapperClass ?? ""}>
+          {showDescription && descriptionCopy && (
+            <p className="text-[12px] text-slate-500">{descriptionCopy}</p>
+          )}
+          <button
+            type="button"
+            style={{ backgroundColor: "aquamarine", border: "none" }}
+            disabled={reminderDisabled || isLoading}
+            onClick={async () => {
+              if (!effectiveBucket) return
+              let classTiming: string | undefined
+              if (action.requiresTiming) {
+                const timingResponse =
+                  typeof window !== "undefined"
+                    ? window.prompt(action.timingPrompt ?? "When is the extra class happening?")
+                    : null
+                if (!timingResponse) {
+                  toast.info("Class timing is required to send this notification.")
+                  return
+                }
+                const trimmedTiming = timingResponse.trim()
+                if (!trimmedTiming) {
+                  toast.info("Class timing is required to send this notification.")
+                  return
+                }
+                classTiming = trimmedTiming
+              }
+              const context = classTiming ? { classTiming } : undefined
+              void handleSectionAction(
+                group.title,
+                effectiveBucket,
+                action.label,
+                action.buildMessage(effectiveBucket.sectionTitle, context),
+                action.needsRevisionNotes,
+                classTiming,
+              )
+            }}
+            className={`rounded-2xl border border-slate-200 bg-white px-3 mb-5 py-2 text-[12px] font-semibold text-slate-900 transition hover:border-slate-300 ${
+              reminderDisabled || isLoading ? "cursor-allowed opacity-60" : ""
+            }`}
+          >
+            {isLoading ? "Sending..." : action.label}
+          </button>          
+          <hr></hr>
+        </div>
+      )
+    }
+
+    const bucketCards = sectionBuckets.map((bucket) => {
+      const isSelected = bucket.id === selectedBucketIdForGroup
+      const bucketClass = isSelected ? "border-emerald-300 bg-emerald-50" : "border-slate-100 bg-white"
+      return (
+        <div
+          key={bucket.id}
+          role="button"
+          tabIndex={0}
+          onClick={() => handleBucketSelect(group.title, bucket.id)}
+          className={`rounded-2xl border ${bucketClass} p-4 shadow-sm focus-visible:ring-2 focus-visible:ring-emerald-200`}
+        >
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Targeted section</p>
+              <p className="text-sm font-semibold text-slate-900">{bucket.sectionTitle}</p>
+              {isSelected && (
+                <p className="text-[11px] font-semibold text-emerald-600">Selected</p>
+              )}
+              <p className="text-xs text-slate-500">
+                {bucket.students.length} student{bucket.students.length === 1 ? "" : "s"} -
+                {bucket.averageScore !== null ? ` avg ${bucket.averageScore}%` : " score pending"}
+              </p>
+            </div>
+            <div className="text-xs text-slate-500">
+              {bucket.hintsTotal} hint{bucket.hintsTotal === 1 ? "" : "s"}
+            </div>
+          </div>
+          <div className="mt-3 space-y-2 text-sm text-slate-700">
+            {bucket.students.map((row) => {
+              const scoreLabel =
+                row.section_score !== null && row.section_score !== undefined
+                  ? `${Math.round(row.section_score)}%`
+                  : "--"
+      const statusDetails =
+        row.adaptive_status || row.exercise_status
+        ? `${row.adaptive_status ?? "Adaptive status pending"} \u00b7 ${
+              row.exercise_status ?? "Exercise status pending"
+            }`
+          : null
+              return (
+                <div
+                  key={`${row.student_id}-${row.section_id ?? row.section_title}`}
+                  className="flex items-center justify-between border-b border-slate-200/70 pb-2 last:border-b-0 last:pb-0"
+                >
+                  <div>
+                    <p className="font-semibold text-slate-900">{row.student_name}</p>
+                    <p className="text-[11px] text-slate-500">Hints: {row.hints ?? "--"}</p>
+                    {group.title === "Incomplete Objectives" && statusDetails && (
+                      <p className="text-[11px] text-slate-500">{statusDetails}</p>
+                    )}
+                  </div>
+                  <span className="text-[11px] font-semibold text-rose-600">{scoreLabel}</span>
+                </div>
+              )
+            })}
+          </div>
+          <div className="mt-3 flex flex-col gap-2 border-t border-dashed border-slate-200 pt-3 text-xs text-slate-500">
+            {(() => {
+              const actions = sectionActionLog[bucket.id] ?? []
+              if (!actions.length) {
+                return <p>No actions taken yet.</p>
+              }
+              const last = actions[0]
+              return (
+                <div className="space-y-1">
+                  <p className="text-[11px] text-slate-500">
+                    Last action:{" "}
+                    <span className="text-[11px] font-semibold text-slate-900">{last.label}</span>
+                  </p>
+                  <p className="text-[11px] text-slate-500">
+                    Last action time:{" "}
+                    <span className="text-[11px] font-semibold text-slate-900">
+                      {formatTimestamp(last.timestamp)}
+                    </span>
+                  </p>
+                </div>
+              )
+            })()}
+            <button
+              type="button"
+              disabled={actionHistoryLoadingFor === bucket.id}
+              onClick={() => {
+                setActionLogBucketId(bucket.id)
+                const sectionId = bucket.students.map((row) => row.section_id).find(Boolean) ?? null
+                void fetchSectionHistory(bucket.id, sectionId)
+              }}
+              style={{ float: "left", width: "200px" }}
+              className="inline-flex w-full items-center justify-center rounded-2xl border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-900 shadow-sm disabled:cursor-allowed disabled:opacity-60"
+            >
+              {actionHistoryLoadingFor === bucket.id ? "Loading..." : "View action history"}
+            </button>
+          </div>
+        </div>
+      )
+    })
 
     return (
       <div
@@ -783,175 +1060,209 @@ export default function ClassInsightShell(props: Props) {
         className="space-y-4 border-slate-200/80 px-4 py-2 text-sm text-slate-500"
       >
         <div className="space-y-4">
-          <div className="rounded-2xl border border-slate-100 bg-slate-50/80 p-4 shadow-sm">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-[11px] uppercase tracking-[0.1em] text-slate-500">{meta.label}</p>
-                <p className="text-sm font-semibold text-slate-900">{meta.headline}</p>
-                <p className="text-xs text-slate-500">{meta.copy}</p>
-              </div>
-              <div className="text-right text-xs text-slate-500">
-                {studentCount} student{studentCount === 1 ? "" : "s"} - {totalEntries}{" "}
-                {meta.entriesLabel}
+          {group.title === "Incomplete Objectives" ? null : (
+            <div className="rounded-2xl border border-slate-100 bg-slate-50/80 p-4 shadow-sm">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.1em] text-slate-500">{meta.label}</p>
+                  <p className="text-sm font-semibold text-slate-900">{meta.headline}</p>
+                  <p className="text-xs text-slate-500">{meta.copy}</p>
+                </div>
+                <div className="text-right text-xs text-slate-500">
+                  {studentCount} student{studentCount === 1 ? "" : "s"} - {totalEntries}{" "}
+                  {meta.entriesLabel}
+                </div>
               </div>
             </div>
-          </div>
+          )}
           {sectionBuckets.length ? (
-            <div className="space-y-3">
-              {sectionBuckets.map((bucket) => {
-                const isSelected = bucket.id === selectedBucketIdForGroup
-                const bucketClass = isSelected
-                  ? "border-emerald-300 bg-emerald-50"
-                  : "border-slate-100 bg-white"
-                return (
-                  <div
-                    key={bucket.id}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => handleBucketSelect(group.title, bucket.id)}
-                    className={`rounded-2xl border ${bucketClass} p-4 shadow-sm focus-visible:ring-2 focus-visible:ring-emerald-200`}
-                  >
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                      <div>
-                        <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">
-                          Targeted section
-                        </p>
-                        <p className="text-sm font-semibold text-slate-900">
-                          {bucket.sectionTitle}
-                        </p>
-                        {isSelected && (
-                          <p className="text-[11px] font-semibold text-emerald-600">Selected</p>
-                        )}
-                        <p className="text-xs text-slate-500">
-                          {bucket.students.length} student{bucket.students.length === 1 ? "" : "s"} -
-                          {bucket.averageScore !== null ? ` avg ${bucket.averageScore}%` : " score pending"}
-                        </p>
-                      </div>
-                      <div className="text-xs text-slate-500">
-                        {bucket.hintsTotal} hint{bucket.hintsTotal === 1 ? "" : "s"}
-                      </div>
-                    </div>
-                    <div className="mt-3 space-y-2 text-sm text-slate-700">
-                      {bucket.students.map((row) => {
-                        const scoreLabel =
-                          row.section_score !== null && row.section_score !== undefined
-                            ? `${Math.round(row.section_score)}%`
-                            : "--"
-                        return (
-                          <div
-                            key={`${row.student_id}-${row.section_id ?? row.section_title}`}
-                            className="flex items-center justify-between border-b border-slate-200/70 pb-2 last:border-b-0 last:pb-0"
-                          >
-                            <div>
-                              <p className="font-semibold text-slate-900">{row.student_name}</p>
-                              <p className="text-[11px] text-slate-500">Hints: {row.hints ?? "--"}</p>
-                            </div>
-                            <span className="text-[11px] font-semibold text-rose-600">
-                              {scoreLabel}
-                            </span>
-                          </div>
-                        )
-                      })}
-                    </div>
-                    <div className="mt-3 flex flex-col gap-2 border-t border-dashed border-slate-200 pt-3 text-xs text-slate-500">
-                      {(() => {
-                        const actions = sectionActionLog[bucket.id] ?? []
-                        if (!actions.length) {
-                          return <p>No actions taken yet.</p>
-                        }
-                        const last = actions[0]
-                        return (
-                          <div className="space-y-1">
-                            <p className="text-[11px] text-slate-500">
-                              Last action:{" "}
-                              <span className="text-[11px] font-semibold text-slate-900">
-                                {last.label}
-                              </span>
-                            </p>
-                            <p className="text-[11px] text-slate-500">
-                              Last action time:{" "}
-                              <span className="text-[11px] font-semibold text-slate-900">
-                                {formatTimestamp(last.timestamp)}
-                              </span>
-                            </p>
-                          </div>
-                        )
-                      })()}
-                      <button
-                        type="button"
-                        disabled={actionHistoryLoadingFor === bucket.id}
-                        onClick={() => {
-                          setActionLogBucketId(bucket.id)
-                          const sectionId =
-                            bucket.students.map((row) => row.section_id).find(Boolean) ?? null
-                          void fetchSectionHistory(bucket.id, sectionId)
-                        }}
-                        style={{ float: "left", width: "200px" }}
-                        className="inline-flex w-full items-center justify-center rounded-2xl border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-900 shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        {actionHistoryLoadingFor === bucket.id ? "Loading..." : "View action history"}
-                      </button>
+            group.title === "Stuck Students" ? (
+              <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
+                <div className="space-y-3">{bucketCards}</div>
+                <div className="space-y-3">
+                  <div className="rounded-2xl border border-slate-200/80 bg-white/80 p-4 shadow-sm">
+                    <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500"><b>AI Suggestion</b></p>
+                    <p className="text-xs text-slate-500">
+                      Select the appropriate action to signal the next step for students in the targeted section.
+                    </p>
+                    <div className="mt-3 space-y-3">
+                      {sectionActions.map((action) =>
+                        renderSectionActionControl(action, true, "space-y-2"),
+                      )}
                     </div>
                   </div>
-                )
-              })}
-            </div>
-          ) : (
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">{bucketCards}</div>
+            )
+          ) : group.title === "Incomplete Objectives" ? null : (
             <p className="text-xs text-slate-500">{meta.emptyMessage}</p>
           )}
-        </div>
+      </div>
+      {group.title === "Incomplete Objectives" && (
+        <>
+          <div className="mt-0 space-y-3 rounded-2xl border border-slate-200/80 bg-slate-50/80 p-4 shadow-sm text-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500">Students continuing work</p>
+                <p className="text-sm font-semibold text-slate-900">In-progress work</p>
+                <p className="text-xs text-slate-500">
+                  Every student whose adaptive or exercise section is currently in progress.
+                </p>
+              </div>
+              <span className="text-xs text-slate-500">
+                {totalInProgressStudents} student{totalInProgressStudents === 1 ? "" : "s"}
+              </span>
+            </div>
+            {inProgressSections.length ? (
+              <div className="mt-3 space-y-4">
+                {inProgressSections.map((section) => (
+                  <div
+                    key={section.sectionId}
+                    className="space-y-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm"
+                  >
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-semibold text-slate-900">
+                        Targeted section · {section.sectionTitle ?? "Section"}
+                      </p>
+                      <span className="text-[11px] uppercase tracking-[0.2em] text-slate-500">
+                        {section.students.length} student{section.students.length === 1 ? "" : "s"}
+                      </span>
+                    </div>
+                    <div className="space-y-3 text-xs text-slate-700">
+                      {section.students.map((row) => (
+                      <div
+                        key={`${row.student_id}-${row.section_id ?? row.section_title}`}
+                        className="rounded-2xl border border-slate-100 bg-slate-50/70 p-3 text-sm text-slate-700"
+                      >
+                        <p className="text-sm font-semibold text-slate-900">{row.student_name}</p>
+                        <div className="mt-1 flex flex-wrap gap-3 text-[11px]">
+                          <span className="text-slate-600">
+                            Adaptive:
+                            <span className={`ml-1 font-semibold ${statusToneClass(row.adaptive_status)}`}>
+                              {row.adaptive_status ?? "Pending"}
+                            </span>
+                          </span>
+                          <span className="text-slate-600">
+                            Exercises:
+                            <span className={`ml-1 font-semibold ${statusToneClass(row.exercise_status)}`}>
+                              {row.exercise_status ?? "Pending"}
+                            </span>
+                          </span>
+                          <span className="text-slate-600">
+                            Score:
+                            <span className="ml-1 font-semibold text-slate-900">
+                              {row.section_score !== null && row.section_score !== undefined
+                                ? `${Math.round(row.section_score)}%`
+                                : "--"}
+                            </span>
+                          </span>
+                        </div>
+                        <div className="mt-2 space-y-1 text-[11px] text-slate-500">
+                          <p>
+                            Adaptive last attempt:
+                            <span className="ml-1 font-semibold text-slate-900">
+                              {formatTimestamp(row.adaptive_last_attempted_at) || "Pending"}
+                            </span>
+                          </p>
+                          <p>
+                            Exercises last attempt:
+                            <span className="ml-1 font-semibold text-slate-900">
+                              {formatTimestamp(row.exercise_last_attempted_at) || "Pending"}
+                            </span>
+                          </p>
+                        </div>
+                      </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-slate-500">
+                No students with in-progress adaptive or exercise work yet.
+              </p>
+            )}
+          </div>
+          {/* <div className="mt-5 space-y-3 rounded-2xl border border-slate-200/80 bg-slate-50/80 p-4 shadow-sm text-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500">Assigned sections</p>
+                <p className="text-sm font-semibold text-slate-900">Not started</p>
+                <p className="text-xs text-slate-500">
+                  Students assigned to a section who haven’t begun their work yet.
+                </p>
+              </div>
+              <span className="text-xs text-slate-500">
+                {totalNotStartedStudents} student{totalNotStartedStudents === 1 ? "" : "s"}
+              </span>
+            </div>
+            {notStartedSections.length ? (
+              <div className="mt-3 space-y-3">
+                {notStartedSections.map((section) => (
+                  <div
+                    key={`not-started-${section.sectionId}`}
+                    className="space-y-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm"
+                  >
+                    <div className="flex items-center justify-between text-xs text-slate-500">
+                      <p className="text-sm font-semibold text-slate-900">
+                        Targeted section · {section.sectionTitle ?? "Section"}
+                      </p>
+                      <span className="uppercase tracking-[0.2em]">
+                        {section.students.length} student{section.students.length === 1 ? "" : "s"}
+                      </span>
+                    </div>
+                    <div className="space-y-3 text-xs text-slate-700">
+                      {section.students.map((row) => (
+                        <div
+                          key={`${row.student_id}-${row.section_id ?? row.section_title}-pending`}
+                          className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 p-3 text-sm text-slate-700"
+                        >
+                          <p className="text-sm font-semibold text-slate-900">{row.student_name}</p>
+                          <p className="text-[11px] text-slate-500">Assigned but not started</p>
+                          <div className="mt-1 flex flex-wrap gap-3 text-[11px]">
+                            <span className="text-slate-600">
+                              Adaptive:
+                              <span className="ml-1 font-semibold text-yellow-600">Not started</span>
+                            </span>
+                            <span className="text-slate-600">
+                              Exercises:
+                              <span className="ml-1 font-semibold text-yellow-600">Not started</span>
+                            </span>
+                            <span className="text-slate-600">
+                              Hints:
+                              <span className="ml-1 font-semibold text-slate-900">
+                                {row.hints ?? "--"}
+                              </span>
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-slate-500">
+                No assigned sections sitting idle right now.
+              </p>
+            )}
+          </div> */}
+        </>
+      )}
         <div className="text-xs text-slate-500">
-          {targetBucket
-            ? `Selected section: ${targetBucket.sectionTitle}`
+          {group.title === "Incomplete Objectives"
+            ? "Automatic reminders target the first active section."
+            : effectiveBucket
+            ? `Selected section: ${effectiveBucket.sectionTitle}`
             : "Select a section to notify students at scale."}
         </div>
-        <div className="mt-4 flex flex-wrap gap-2">
-          {sectionActions.map((action) => {
-            const actionKey = `${group.title}-${targetBucket?.id ?? "none"}-${action.label}`
-            const isLoading = Boolean(sectionActionLoading[actionKey])
-            return (
-              <button
-                key={actionKey}
-                type="button"
-                disabled={!targetBucket || isLoading}
-                onClick={async () => {
-                  if (!targetBucket) return
-                  let classTiming: string | undefined
-                  if (action.requiresTiming) {
-                    const timingResponse =
-                      typeof window !== "undefined"
-                        ? window.prompt(action.timingPrompt ?? "When is the extra class happening?")
-                        : null
-                    if (!timingResponse) {
-                      toast.info("Class timing is required to send this notification.")
-                      return
-                    }
-                    const trimmedTiming = timingResponse.trim()
-                    if (!trimmedTiming) {
-                      toast.info("Class timing is required to send this notification.")
-                      return
-                    }
-                    classTiming = trimmedTiming
-                  }
-                  const context = classTiming ? { classTiming } : undefined
-                  void handleSectionAction(
-                    group.title,
-                    targetBucket,
-                    action.label,
-                    action.buildMessage(targetBucket.sectionTitle, context),
-                    action.needsRevisionNotes,
-                    classTiming,
-                  )
-                }}
-                className={`rounded-1xl border border-slate-200 bg-white px-3 py-2 text-[12px] font-semibold text-slate-900 transition hover:border-slate-300 ${
-                  !targetBucket || isLoading ? "cursor-not-allowed opacity-60" : ""
-                }`}
-              >
-                {isLoading ? "Sending..." : action.label}
-              </button>
-            )
-          })}
-        </div>
+        {group.title !== "Stuck Students" && (
+          <div className="mt-4 flex flex-wrap gap-2">
+            {sectionActions.map((action) => renderSectionActionControl(action, false, "flex-shrink-0"))}
+          </div>
+        )}
         {group.title !== "Stuck Students" && group.strugglingActions && (
           <div className="mt-2 space-y-1 text-left text-sm">
             <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-400">
@@ -1209,6 +1520,87 @@ export default function ClassInsightShell(props: Props) {
       }),
     )
   }
+
+  const hasSectionAttempt = useCallback((row: StudentSectionStatus) => {
+    if (!row) return false
+    return Boolean(
+      row.adaptive_last_attempted_at ||
+        row.exercise_last_attempted_at ||
+        (typeof row.exercise_attempted_questions === "number" && row.exercise_attempted_questions > 0),
+    )
+  }, [])
+
+  const resolveSectionRow = useCallback(
+    (row: StudentSectionStatus) => {
+      if (!row.student_id || !row.module_id) return row
+      const moduleCache = studentSectionsCache[row.student_id]?.[row.module_id] ?? []
+      if (!moduleCache.length) return row
+      const matchedSection = moduleCache.find((section) => {
+        if (section.section_id && row.section_id) {
+          return section.section_id === row.section_id
+        }
+        if (section.section_title && row.section_title) {
+          return section.section_title === row.section_title
+        }
+        return false
+      })
+      if (!matchedSection) return row
+      return {
+        ...row,
+        adaptive_status: matchedSection.adaptive_status ?? row.adaptive_status,
+        exercise_status: matchedSection.exercise_status ?? row.exercise_status,
+        section_score: matchedSection.section_score ?? row.section_score,
+        adaptive_last_attempted_at:
+          matchedSection.adaptive_last_attempted_at ?? row.adaptive_last_attempted_at,
+        exercise_last_attempted_at:
+          matchedSection.exercise_last_attempted_at ?? row.exercise_last_attempted_at,
+      }
+    },
+    [studentSectionsCache],
+  )
+
+  const bothStatusesCompleted = (row: StudentSectionStatus) => {
+    const adaptiveDone = row.adaptive_status?.trim().toLowerCase() === "completed"
+    const exerciseDone = row.exercise_status?.trim().toLowerCase() === "completed"
+    return adaptiveDone && exerciseDone
+  }
+
+  const resolvedInProgressRows = useMemo(
+    () =>
+      inProgressStudentSections
+        .map(resolveSectionRow)
+        .filter((row) => !bothStatusesCompleted(row))
+        .filter((row) => hasSectionAttempt(row)),
+    [inProgressStudentSections, resolveSectionRow, hasSectionAttempt],
+  )
+  const resolvedNotStartedRows = useMemo(
+    () =>
+      notStartedStudentSections
+        .map(resolveSectionRow)
+        .filter((row) => !bothStatusesCompleted(row)),
+    [notStartedStudentSections, resolveSectionRow],
+  )
+
+  const sectionFetchPairs = useMemo(() => {
+    const map = new Map<string, { studentId: string; moduleId: string }>()
+    const addRow = (row: StudentSectionStatus) => {
+      if (!row.student_id || !row.module_id) return
+      const key = `${row.student_id}::${row.module_id}`
+      if (!map.has(key)) {
+        map.set(key, { studentId: row.student_id, moduleId: row.module_id })
+      }
+    }
+    resolvedInProgressRows.forEach(addRow)
+    resolvedNotStartedRows.forEach(addRow)
+    return Array.from(map.values())
+  }, [resolvedInProgressRows, resolvedNotStartedRows])
+
+  useEffect(() => {
+    if (!sectionFetchPairs.length) return
+    sectionFetchPairs.forEach(({ studentId, moduleId }) => {
+      void fetchStudentSectionsForModule(studentId, moduleId)
+    })
+  }, [sectionFetchPairs, fetchStudentSectionsForModule])
 
   const simpleFocusPreview = useMemo(
     () =>
@@ -1886,8 +2278,11 @@ export default function ClassInsightShell(props: Props) {
                         </p>
                       )
                     }
-                    return entries.map((entry) => (
-                      <div key={entry.timestamp} className="rounded-2xl border border-slate-200 p-3">
+                    return entries.map((entry, index) => (
+                      <div
+                        key={`${entry.timestamp}-${index}`}
+                        className="rounded-2xl border border-slate-200 p-3"
+                      >
                         <p className="text-sm font-semibold text-slate-900">{entry.label}</p>
                         <p className="text-xs text-slate-500 mb-2">{formatTimestamp(entry.timestamp)}</p>
                         <div className="space-y-2 text-sm text-slate-700">

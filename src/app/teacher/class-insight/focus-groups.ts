@@ -92,13 +92,11 @@ function collectInProgressSectionsByStudent(modules: ModuleInsight[]) {
     for (const student of students) {
       if (!student.student_id) continue
       for (const section of student.sections ?? []) {
+        if (!section.assigned) continue
         const adaptiveStatus = normalizeStatus(section.adaptive_status)
         const exerciseStatus = normalizeStatus(section.exercise_status)
-        const adaptiveHasPercent = typeof section.adaptive_percent === "number"
-        const exerciseHasPercent =
-          typeof section.exercise_percent === "number" || Boolean(section.exercise_last_attempted_at)
-        const isAdaptiveInProgress = adaptiveStatus === "in progress" && adaptiveHasPercent
-        const isExerciseInProgress = exerciseStatus === "in progress" && exerciseHasPercent
+        const isAdaptiveInProgress = adaptiveStatus === "in progress"
+        const isExerciseInProgress = exerciseStatus === "in progress"
         if (!isAdaptiveInProgress && !isExerciseInProgress) continue
         const entries = pendingMap.get(student.student_id) ?? []
         entries.push(section)
@@ -191,6 +189,8 @@ export function buildFocusGroupsFromStudents(
   if (!students.length) {
     return buildFallbackFocusGroups(subjectName)
   }
+
+  const studentLookup = new Map(students.map((student) => [student.student_id, student]))
 
   const safeSubject = subjectName || "This subject"
   const averageValue = (student: StudentInsight) => student.overall_average ?? -1
@@ -369,18 +369,19 @@ export function buildFocusGroupsFromStudents(
     })
 
   const buildIncompleteTableRows = () =>
-    incomplete.flatMap((student) => {
-      const pendingSections = pendingSectionsByStudent.get(student.student_id) ?? []
+    Array.from(pendingSectionsByStudent.entries()).flatMap(([studentId, pendingSections]) => {
+      const student = studentLookup.get(studentId)
+      const masteryValue = student?.overall_average
+      const mastery =
+        masteryValue !== null && masteryValue !== undefined ? Math.round(masteryValue) : "--"
+      const hints = student?.hints ?? 0
       return pendingSections.map((section) => ({
-        student_id: student.student_id,
-        student_name: student.student_name,
+        student_id: studentId,
+        student_name: student?.student_name ?? "Student",
         section_title: section.section_title,
         section_score: section.section_score,
-        mastery:
-          student.overall_average !== null && student.overall_average !== undefined
-            ? Math.round(student.overall_average)
-            : "--",
-        hints: student.hints ?? 0,
+        mastery,
+        hints,
         section_id: section.section_id,
         module_id: section.module_id ?? null,
         exercise_question_count: section.exercise_question_count ?? null,
