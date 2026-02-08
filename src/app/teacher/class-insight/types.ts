@@ -155,3 +155,23 @@ export type ModuleStudentBreakdown = {
   module_score: number | null
   sections: ModuleStudentSection[]
 }
+
+export type StudentSectionStatus = {
+  student_id: string
+  student_name: string
+  module_id: string
+  module_title: string
+  section_id?: string
+  section_title?: string
+  adaptive_status?: string | null
+  exercise_status?: string | null
+  section_score?: number | null
+  hints?: number | null
+  adaptive_last_attempted_at?: string | null
+  exercise_last_attempted_at?: string | null
+  exercise_attempted_questions?: number | null
+  completed?: boolean
+}
+
+export type InProgressStudentSection = StudentSectionStatus
+export type NotStartedStudentSection = StudentSectionStatus

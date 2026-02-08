@@ -63,6 +63,10 @@ import type {
 
 
 
+  ModuleStudentSection,
+
+
+
   StrengthSummary,
 
 
@@ -83,7 +87,9 @@ import type {
 
   SubjectOption,
 
-
+  InProgressStudentSection,
+  NotStartedStudentSection,
+  StudentSectionStatus,
 
   FocusGroupTableRow,
 } from "./types"
@@ -1443,6 +1449,22 @@ function collectStrongSectionsByStudent(modules: ModuleInsight[]): Map<
   return strongMap
 }
 
+function collectSectionsByStudent(modules: ModuleInsight[]): Map<string, ModuleStudentSection[]> {
+  const sectionMap = new Map<string, ModuleStudentSection[]>()
+  for (const module of modules) {
+    const studentRoster = module.students ?? []
+    for (const student of studentRoster) {
+      if (!student.student_id) continue
+      for (const section of student.sections ?? []) {
+        const entries = sectionMap.get(student.student_id) ?? []
+        entries.push(section)
+        sectionMap.set(student.student_id, entries)
+      }
+    }
+  }
+  return sectionMap
+}
+
 function formatWeakSections(weakSections: { section_title?: string; section_score: number | null }[]) {
   return weakSections
     .slice(0, 3)
@@ -1485,13 +1507,25 @@ function buildFocusGroupsFromStudents(
 
   const weakSectionsByStudent = collectWeakSectionsByStudent(modules)
   const strongSectionsByStudent = collectStrongSectionsByStudent(modules)
+  const sectionsByStudent = collectSectionsByStudent(modules)
   const stuck = buildBucket(
     (student) => getScoreTone(student.overall_average ?? null) === "weak",
     (a, b) => averageValue(a) - averageValue(b),
   )
 
   const ready = buildBucket(
-    (student) => (student.overall_average ?? 0) >= 80,
+    (student) => {
+      const studentId = student.student_id
+      if (!studentId) return false
+      const studentSections = sectionsByStudent.get(studentId) ?? []
+      if (!studentSections.length) return false
+      return studentSections.every(
+        (section) =>
+          section.section_score !== null &&
+          section.section_score !== undefined &&
+          section.section_score >= 80,
+      )
+    },
     (a, b) => averageValue(b) - averageValue(a),
   )
 
@@ -2513,6 +2547,64 @@ export default async function ClassInsightPage({
 
 
 
+  const hasInProgressStatus = (status?: string | null) =>
+    typeof status === "string" && status.trim().toLowerCase() === "in progress"
+  const isCompletedStatus = (status?: string | null) =>
+    typeof status === "string" && status.trim().toLowerCase() === "completed"
+
+  const buildAssignedSectionRow = (
+    module: ModuleInsight,
+    student: ModuleStudentBreakdown,
+    section: ModuleStudentSection,
+  ): StudentSectionStatus => ({
+    student_id: student.student_id,
+    student_name: student.student_name,
+    module_id: module.module_id,
+    module_title: module.module_title,
+    section_id: section.section_id,
+    section_title: section.section_title,
+    adaptive_status: section.adaptive_status ?? null,
+    exercise_status: section.exercise_status ?? null,
+    section_score: section.section_score,
+    hints: student.hints ?? 0,
+    adaptive_last_attempted_at: section.adaptive_last_attempted_at ?? null,
+    exercise_last_attempted_at: section.exercise_last_attempted_at ?? null,
+    exercise_attempted_questions: section.exercise_attempted_questions ?? null,
+    completed: section.completed,
+  })
+
+  const assignedSectionRows = moduleInsights.flatMap((module) =>
+    (module.students ?? []).flatMap((student) =>
+      (student.sections ?? [])
+        .filter((section) => section.assigned)
+        .map((section) => buildAssignedSectionRow(module, student, section)),
+    ),
+  )
+
+  const inProgressStudentSections: InProgressStudentSection[] = assignedSectionRows.filter(
+    (row) =>
+      hasInProgressStatus(row.adaptive_status) || hasInProgressStatus(row.exercise_status),
+  )
+
+  const hasSectionAttempt = (row: StudentSectionStatus) =>
+    Boolean(
+      row.adaptive_last_attempted_at ||
+        row.exercise_last_attempted_at ||
+        (typeof row.exercise_attempted_questions === "number" && row.exercise_attempted_questions > 0),
+    )
+
+  const notStartedStudentSections: NotStartedStudentSection[] = assignedSectionRows.filter((row) => {
+    const hasStarted =
+      hasInProgressStatus(row.adaptive_status) ||
+      hasInProgressStatus(row.exercise_status) ||
+      isCompletedStatus(row.adaptive_status) ||
+      isCompletedStatus(row.exercise_status) ||
+      Boolean(row.completed)
+    return !hasStarted && !hasSectionAttempt(row)
+  })
+
+
+
   const buildStudentDetail = (student?: StudentInsight) => {
 
     if (!student) return undefined
@@ -2878,6 +2970,15 @@ export default async function ClassInsightPage({
 
 
       suggestedActions={suggestedActions}
+
+
+
+
+
+
+
+      inProgressStudentSections={inProgressStudentSections}
+      notStartedStudentSections={notStartedStudentSections}
 
 
 
