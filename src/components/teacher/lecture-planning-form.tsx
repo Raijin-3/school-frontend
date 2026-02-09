@@ -49,7 +49,18 @@ const buildClassLabel = (item: ClassRow) => {
 const safeText = (value?: string | null, fallback = "Unnamed") =>
   value?.trim() || fallback
 
-export function LecturePlanningForm() {
+export type LecturePlanningContext = {
+  classId: string
+  subjectId: string
+  moduleId: string
+  sectionId: string
+}
+
+type LecturePlanningFormProps = {
+  onContextChange?: (context: LecturePlanningContext | null) => void
+}
+
+export function LecturePlanningForm({ onContextChange }: LecturePlanningFormProps = {}) {
   const [classes, setClasses] = useState<ClassRow[]>([])
   const [subjects, setSubjects] = useState<SubjectRow[]>([])
   const [modules, setModules] = useState<ModuleRow[]>([])
@@ -61,7 +72,9 @@ export function LecturePlanningForm() {
   const [sectionId, setSectionId] = useState("")
 
   const [strugglingConcepts, setStrugglingConcepts] = useState("")
+  const [timeAvailableMinutes, setTimeAvailableMinutes] = useState("")
   const [topicHierarchy, setTopicHierarchy] = useState("")
+  const [isLoadingHierarchy, setIsLoadingHierarchy] = useState(false)
 
   const [isLoadingClasses, setIsLoadingClasses] = useState(false)
   const [isLoadingSubjects, setIsLoadingSubjects] = useState(false)
@@ -210,6 +223,68 @@ export function LecturePlanningForm() {
     }
   }, [moduleId])
 
+  useEffect(() => {
+    if (!sectionId) {
+      setTopicHierarchy("")
+      setIsLoadingHierarchy(false)
+      return
+    }
+
+    let isActive = true
+    const controller = new AbortController()
+
+    const fetchHierarchy = async () => {
+      setIsLoadingHierarchy(true)
+      try {
+        const response = await fetch(
+          `/api/teacher/sections/${sectionId}/topic-hierarchy`,
+          {
+            cache: "no-store",
+            signal: controller.signal,
+          },
+        )
+        const data = await response.json()
+        if (!response.ok) {
+          throw new Error(data?.error || "Failed to load topic hierarchy")
+        }
+        if (!isActive) return
+        setTopicHierarchy(data?.hierarchy ?? "")
+      } catch (error) {
+        if (controller.signal.aborted) return
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Unable to fetch topic hierarchy"
+        toast.error(message)
+      } finally {
+        if (isActive) {
+          setIsLoadingHierarchy(false)
+        }
+      }
+    }
+
+    void fetchHierarchy()
+
+    return () => {
+      isActive = false
+      controller.abort()
+    }
+  }, [sectionId])
+
+  useEffect(() => {
+    if (!onContextChange) return
+    if (classId && subjectId && moduleId && sectionId) {
+      onContextChange({
+        classId,
+        subjectId,
+        moduleId,
+        sectionId,
+      })
+    } else {
+      onContextChange(null)
+    }
+  }, [classId, subjectId, moduleId, sectionId, onContextChange])
+
   const isFormValid = Boolean(classId && subjectId && moduleId && sectionId)
 
   const handleSave = async () => {
@@ -217,6 +292,16 @@ export function LecturePlanningForm() {
       toast.error("Select a class, subject, module and section before saving.")
       return
     }
+    const minutesValue = timeAvailableMinutes.trim()
+    const parsedMinutes =
+      minutesValue && !Number.isNaN(Number(minutesValue))
+        ? Number(minutesValue)
+        : null
+    if (minutesValue && parsedMinutes === null) {
+      toast.error("Enter a valid number for time available.")
+      return
+    }
+
     setIsSaving(true)
     try {
       const payload = {
@@ -225,15 +310,27 @@ export function LecturePlanningForm() {
         module_id: moduleId,
         section_id: sectionId,
         struggling_concepts: strugglingConcepts.trim(),
-        topic_hierarchy_covered_so_far: topicHierarchy.trim(),
+        topic_hierarchy_covered_so_far: topicHierarchy.trim() || null,
+        time_available_minutes: parsedMinutes,
       }
-      console.info("Lecture planning snapshot", payload)
-      // Placeholder: extend to persist in backend when endpoint is ready.
-      await new Promise((resolve) => setTimeout(resolve, 250))
-      toast.success("Planning snapshot captured.")
+
+      const response = await fetch("/api/teacher/lecture-planning", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      })
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw new Error(errorText || "Failed to save lecture plan")
+      }
+
+      const data = await response.json()
+      console.info("Lecture planning AI response", data.lesson_plan ?? data.ai_response)
+      toast.success("AI lesson plan saved. Check the planning dashboard for details.")
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : "Unable to save planning context"
+        error instanceof Error ? error.message : "Unable to save planning snapshot"
       toast.error(message)
     } finally {
       setIsSaving(false)
@@ -273,9 +370,9 @@ export function LecturePlanningForm() {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
       <div className="flex flex-col gap-2">
-        <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-900 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-slate-100">
+        {/* <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-900 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-slate-100">
           Lecture Planning
-        </div>
+        </div> */}
         <h2 className="text-2xl font-semibold text-slate-900">Capture the next lecture</h2>
         <p className="text-sm text-slate-600">
           Pick the class, subject, module, and section you want to focus on. Document the
@@ -285,20 +382,21 @@ export function LecturePlanningForm() {
 
       <div className="mt-6 space-y-5">
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <div className="space-y-2">
-            <Label className="text-sm font-semibold text-slate-700">Class</Label>
-            <Select
-              value={classId}
-              onValueChange={(value) => {
-                setClassId(value)
-                setSubjectId("")
-                setModuleId("")
-                setSectionId("")
-                setModules([])
-                setSections([])
-              }}
-              disabled={isLoadingClasses}
-            >
+        <div className="space-y-2">
+          <Label className="text-sm font-semibold text-slate-700">Class</Label>
+          <Select
+            value={classId}
+            onValueChange={(value) => {
+              setClassId(value)
+              setSubjectId("")
+              setModuleId("")
+              setSectionId("")
+              setModules([])
+              setSections([])
+              setTopicHierarchy("")
+            }}
+            disabled={isLoadingClasses}
+          >
               <SelectTrigger className="h-11 rounded-xl border border-slate-200 bg-white shadow-xs">
                 <SelectValue placeholder="Select class" />
               </SelectTrigger>
@@ -315,17 +413,18 @@ export function LecturePlanningForm() {
 
           <div className="space-y-2">
             <Label className="text-sm font-semibold text-slate-700">Subject</Label>
-            <Select
-              value={subjectId}
-              onValueChange={(value) => {
-                setSubjectId(value)
-                setModuleId("")
-                setSectionId("")
-                setSections([])
-                setModules([])
-              }}
-              disabled={!classId || isLoadingSubjects}
-            >
+          <Select
+            value={subjectId}
+            onValueChange={(value) => {
+              setSubjectId(value)
+              setModuleId("")
+              setSectionId("")
+              setSections([])
+              setModules([])
+              setTopicHierarchy("")
+            }}
+            disabled={!classId || isLoadingSubjects}
+          >
               <SelectTrigger className="h-11 rounded-xl border border-slate-200 bg-white shadow-xs">
                 <SelectValue placeholder="Select subject" />
               </SelectTrigger>
@@ -344,15 +443,16 @@ export function LecturePlanningForm() {
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <div className="space-y-2">
             <Label className="text-sm font-semibold text-slate-700">Subject module</Label>
-            <Select
-              value={moduleId}
-              onValueChange={(value) => {
-                setModuleId(value)
-                setSectionId("")
-                setSections([])
-              }}
-              disabled={!subjectId || isLoadingModules}
-            >
+          <Select
+            value={moduleId}
+            onValueChange={(value) => {
+              setModuleId(value)
+              setSectionId("")
+              setSections([])
+              setTopicHierarchy("")
+            }}
+            disabled={!subjectId || isLoadingModules}
+          >
               <SelectTrigger className="h-11 rounded-xl border border-slate-200 bg-white shadow-xs">
                 <SelectValue placeholder="Select module" />
               </SelectTrigger>
@@ -403,17 +503,18 @@ export function LecturePlanningForm() {
         </div>
 
         <div className="space-y-2">
-          <Label className="text-sm font-semibold text-slate-700">
-            Topic hierarchy covered so far
-          </Label>
-          <Textarea
-            value={topicHierarchy}
-            onChange={(event) => setTopicHierarchy(event.target.value)}
-            placeholder="Document the order of topics, skills, or checkpoints you have already taught."
-            rows={3}
+          <Label className="text-sm font-semibold text-slate-700">Time available (minutes)</Label>
+          <input
+            type="number"
+            min={0}
+            step={1}
+            value={timeAvailableMinutes}
+            onChange={(event) => setTimeAvailableMinutes(event.target.value)}
+            placeholder="e.g., 45"
+            className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 shadow-xs focus:border-slate-300 focus:outline-none"
           />
           <p className="text-xs text-slate-500">
-            Helps the AI understand prior coverage. Examples: “Chapters 1 & 2, basic equations, lab skills.”
+            Estimate how many minutes are left in the session so the lesson builder can pace the plan.
           </p>
         </div>
 
