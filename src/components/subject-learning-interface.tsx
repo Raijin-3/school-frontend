@@ -18697,61 +18697,81 @@ const renderQuestionPopup = (variant: "modal" | "embedded" = "modal") => {
                                                             </span>
                                                           )}
                                                         </div>
-                                                        <p className="mt-1 text-xs text-slate-600">
-                                                          {getNotificationMessage(notification)}
-                                                        </p>
+                                                        <>
+                                                          {(() => {
+                                                            const normalizedLabel = (notification.action_label ?? "").trim().toLowerCase()
+                                                            const isRevisionNote = normalizedLabel === "revision notes on weak areas."
+                                                            const isQuiz = normalizedLabel === "weakness practice quiz."
+                                                            const isExtraClass = normalizedLabel === "extra class."
+                                                            const isSendReminder = normalizedLabel === "send reminder"
+                                                            const notificationText =
+                                                              getNotificationMessage(notification) ||
+                                                              (isSendReminder ? "Your teacher sent a reminder." : "")
+                                                            return (
+                                                              <div>
+                                                                <p className="mt-1 text-xs text-slate-600">
+                                                                  {notificationText}
+                                                                </p>
+                                                                {isSendReminder && (
+                                                                  <p className="mt-2 text-[11px] font-semibold uppercase tracking-wide text-indigo-500">
+                                                                    Reminder sent
+                                                                  </p>
+                                                                )}
+                                                                {(() => {
+                                                                  if (isRevisionNote) {
+                                                                    return (
+                                                                      <button
+                                                                        type="button"
+                                                                        onClick={() => {
+                                                                          setSelectedSectionId(section.id)
+                                                                          setSelectedQuestionForPopup(null)
+                                                                          setShowQuestionPopup(false)
+                                                                          setActiveRevisionNote(notification)
+                                                                          setHighlightedRevisionId(notification.id)
+                                                                        }}
+                                                                        className="mt-2 inline-flex text-[11px] font-semibold text-indigo-600 hover:text-indigo-500"
+                                                                      >
+                                                                        Start Revision
+                                                                      </button>
+                                                                    )
+                                                                  }
+                                                                  if (isQuiz) {
+                                                                    return (
+                                                                      <Link
+                                                                        href="/playground"
+                                                                        className="mt-2 inline-flex text-[11px] font-semibold text-indigo-600 hover:text-indigo-500"
+                                                                      >
+                                                                        Go to Playground
+                                                                      </Link>
+                                                                    )
+                                                                  }
+                                                                  if (isExtraClass) {
+                                                                    return null
+                                                                  }
+                                                                  if (isSendReminder) {
+                                                                    return null
+                                                                  }
+                                                                  // if (notification.curriculum_url) {
+                                                                  //   return (
+                                                                  //     <Link
+                                                                  //       href={notification.curriculum_url}
+                                                                  //       className="mt-2 inline-flex text-[11px] font-semibold text-indigo-600 hover:text-indigo-500"
+                                                                  //     >
+                                                                  //       View related section
+                                                                  //     </Link>
+                                                                  //   )
+                                                                  // }
+                                                                  return null
+                                                                })()}
+                                                              </div>
+                                                            )
+                                                          })()}
+                                                        </>
                                                         {metadataLine && (
                                                           <p className="mt-1 text-[11px] text-slate-500">
                                                             {metadataLine}
                                                           </p>
                                                         )}
-                                                        {(() => {
-                                                          const normalizedLabel = (notification.action_label ?? "").trim().toLowerCase()
-                                                          const isRevisionNote = normalizedLabel === "revision notes on weak areas."
-                                                          const isQuiz = normalizedLabel === "weakness practice quiz."
-                                                          const isExtraClass = normalizedLabel === "extra class."
-                                                          if (isRevisionNote) {
-                                                            return (
-                                                              <button
-                                                                type="button"
-                                                                onClick={() => {
-                                                                  setSelectedSectionId(section.id)
-                                                                  setSelectedQuestionForPopup(null)
-                                                                  setShowQuestionPopup(false)
-                                                                  setActiveRevisionNote(notification)
-                                                                  setHighlightedRevisionId(notification.id)
-                                                                }}
-                                                                className="mt-2 inline-flex text-[11px] font-semibold text-indigo-600 hover:text-indigo-500"
-                                                              >
-                                                                Start Revision
-                                                              </button>
-                                                            )
-                                                          }
-                                                          if (isQuiz) {
-                                                            return (
-                                                              <Link
-                                                                href="/playground"
-                                                                className="mt-2 inline-flex text-[11px] font-semibold text-indigo-600 hover:text-indigo-500"
-                                                              >
-                                                                Go to Playground
-                                                              </Link>
-                                                            )
-                                                          }
-                                                          if (isExtraClass) {
-                                                            return null
-                                                          }
-                                                          if (notification.curriculum_url) {
-                                                            return (
-                                                              <Link
-                                                                href={notification.curriculum_url}
-                                                                className="mt-2 inline-flex text-[11px] font-semibold text-indigo-600 hover:text-indigo-500"
-                                                              >
-                                                                View related section
-                                                              </Link>
-                                                            )
-                                                          }
-                                                          return null
-                                                        })()}
                                                       </div>
                                                     )
                                                   })}

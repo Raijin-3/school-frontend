@@ -111,6 +111,7 @@ type Props = {
   inProgressStudentSections: InProgressStudentSection[]
   notStartedStudentSections: NotStartedStudentSection[]
   focusGroups: FocusGroup[]
+  assignedSectionRows: StudentSectionStatus[]
   suggestedActions: SuggestedAction[]
   jarvisLog: string
   studentsTracked: number
@@ -282,6 +283,20 @@ const formatTimestamp = (value?: string) => {
   return date.toLocaleString()
 }
 
+const formatReadyTimestamp = (value?: string) => {
+  if (!value) return ""
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ""
+  return date.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+  })
+}
+
 const assignmentBadgeClasses = {
   assigned: "rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.3 text-[9px] font-semibold uppercase tracking-[0.1em] text-emerald-600",
   notAssigned:
@@ -411,6 +426,7 @@ export default function ClassInsightShell(props: Props) {
     inProgressStudentSections,
     notStartedStudentSections,
     focusGroups,
+    assignedSectionRows,
     suggestedActions,
     jarvisLog,
     studentsTracked,
@@ -449,10 +465,57 @@ export default function ClassInsightShell(props: Props) {
     })
       return cards
   }, [quickStats, subjectCompletionPercent, subjectAverageScore])
-  const visibleFocusGroups = focusGroups.filter(
+  const [studentSectionsCache, setStudentSectionsCache] = useState<
+    Record<string, Record<string, ModuleStudentSection[]>>
+  >({})
+  const resolveSectionRow = useCallback(
+    (row: StudentSectionStatus) => {
+      if (!row.student_id || !row.module_id) return row
+      const moduleCache = studentSectionsCache[row.student_id]?.[row.module_id] ?? []
+      if (!moduleCache.length) return row
+      const matchedSection = moduleCache.find((section) => {
+        if (section.section_id && row.section_id) {
+          return section.section_id === row.section_id
+        }
+        if (section.section_title && row.section_title) {
+          return section.section_title === row.section_title
+        }
+        return false
+      })
+      if (!matchedSection) return row
+      return {
+        ...row,
+        adaptive_status: matchedSection.adaptive_status ?? row.adaptive_status,
+        exercise_status: matchedSection.exercise_status ?? row.exercise_status,
+        section_score: matchedSection.section_score ?? row.section_score,
+        adaptive_last_attempted_at:
+          matchedSection.adaptive_last_attempted_at ?? row.adaptive_last_attempted_at,
+        exercise_last_attempted_at:
+          matchedSection.exercise_last_attempted_at ?? row.exercise_last_attempted_at,
+      }
+    },
+    [studentSectionsCache],
+  )
+  const readySectionRows = useMemo(
+    () =>
+      assignedSectionRows
+        .map(resolveSectionRow)
+        .filter((row) => typeof row.section_score === "number" && row.section_score >= 80),
+    [assignedSectionRows, resolveSectionRow],
+  )
+  const readyTableRows = useMemo(() => readySectionRows.map(toFocusGroupTableRow), [readySectionRows])
+  const focusGroupsWithReadySections = useMemo(
+    () =>
+      focusGroups.map((group) =>
+        group.title === "Ready for Extension" ? { ...group, tableRows: readyTableRows } : group,
+      ),
+    [focusGroups, readyTableRows],
+  )
+  const focusGroupsSource = focusGroupsWithReadySections
+  const visibleFocusGroups = focusGroupsSource.filter(
     (group) => !HIDDEN_FOCUS_GROUP_TITLES.has(group.title),
   )
-  const hiddenFocusGroups = focusGroups.filter((group) =>
+  const hiddenFocusGroups = focusGroupsSource.filter((group) =>
     HIDDEN_FOCUS_GROUP_TITLES.has(group.title),
   )
   const [activeHiddenFocusGroup, setActiveHiddenFocusGroup] = useState<string | null>(
@@ -477,7 +540,7 @@ export default function ClassInsightShell(props: Props) {
   const [sectionActionLoading, setSectionActionLoading] = useState<Record<string, boolean>>({})
   const [selectedBucketIds, setSelectedBucketIds] = useState<Record<string, string | null>>({})
   const focusGroupSectionBuckets = useMemo(() => {
-    return focusGroups.reduce<Record<string, SectionBucket[]>>((acc, group) => {
+    return focusGroupsSource.reduce<Record<string, SectionBucket[]>>((acc, group) => {
       const rows = group.tableRows ?? []
       type BucketAccumulator = {
         id: string
@@ -518,7 +581,8 @@ export default function ClassInsightShell(props: Props) {
       }))
       return acc
     }, {})
-  }, [visibleFocusGroups])
+  }, [focusGroupsSource])
+  const readySectionGroups = useMemo(() => groupSectionRows(readySectionRows), [readySectionRows])
   const [activeTile, setActiveTile] = useState<MasteryTile | null>(null)
   const [expandedStudentId, setExpandedStudentId] = useState<string | null>(null)
   const [sectionProgressModule, setSectionProgressModule] = useState<MasteryTile | null>(null)
@@ -526,9 +590,6 @@ export default function ClassInsightShell(props: Props) {
   const [openFocusGroup, setOpenFocusGroup] = useState<string | null>(
     visibleFocusGroups[0]?.title ?? null,
   )
-  const [studentSectionsCache, setStudentSectionsCache] = useState<
-    Record<string, Record<string, ModuleStudentSection[]>>
-  >({})
   const [loadingStudentDetailsId, setLoadingStudentDetailsId] = useState<string | null>(null)
   const [studentDetailErrors, setStudentDetailErrors] = useState<Record<string, string>>({})
   const [assignmentHistory, setAssignmentHistory] = useState<Record<string, string>>({})
@@ -889,6 +950,12 @@ export default function ClassInsightShell(props: Props) {
       (sum, section) => sum + section.students.length,
       0,
     )
+    const readyTargetedSections =
+      group.title === "Ready for Extension" ? readySectionGroups : []
+    const totalReadyStudents = readyTargetedSections.reduce(
+      (sum, section) => sum + section.students.length,
+      0,
+    )
 
     const fallbackBucket =
       group.title === "Incomplete Objectives"
@@ -1030,7 +1097,7 @@ export default function ClassInsightShell(props: Props) {
                   <p className="text-[11px] text-slate-500">
                     Last action time:{" "}
                     <span className="text-[11px] font-semibold text-slate-900">
-                      {formatTimestamp(last.timestamp)}
+                      {formatReadyTimestamp(last.timestamp)}
                     </span>
                   </p>
                 </div>
@@ -1060,7 +1127,7 @@ export default function ClassInsightShell(props: Props) {
         className="space-y-4 border-slate-200/80 px-4 py-2 text-sm text-slate-500"
       >
         <div className="space-y-4">
-          {group.title === "Incomplete Objectives" ? null : (
+          {group.title === "Incomplete Objectives" || group.title === "Ready for Extension" ? null : (
             <div className="rounded-2xl border border-slate-100 bg-slate-50/80 p-4 shadow-sm">
               <div className="flex items-start justify-between gap-4">
                 <div>
@@ -1075,7 +1142,7 @@ export default function ClassInsightShell(props: Props) {
               </div>
             </div>
           )}
-          {sectionBuckets.length ? (
+          {group.title === "Ready for Extension" ? null : sectionBuckets.length ? (
             group.title === "Stuck Students" ? (
               <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
                 <div className="space-y-3">{bucketCards}</div>
@@ -1163,13 +1230,13 @@ export default function ClassInsightShell(props: Props) {
                           <p>
                             Adaptive last attempt:
                             <span className="ml-1 font-semibold text-slate-900">
-                              {formatTimestamp(row.adaptive_last_attempted_at) || "Pending"}
+                              {formatReadyTimestamp(row.adaptive_last_attempted_at) || "Pending"}
                             </span>
                           </p>
                           <p>
                             Exercises last attempt:
                             <span className="ml-1 font-semibold text-slate-900">
-                              {formatTimestamp(row.exercise_last_attempted_at) || "Pending"}
+                              {formatReadyTimestamp(row.exercise_last_attempted_at) || "Pending"}
                             </span>
                           </p>
                         </div>
@@ -1251,9 +1318,96 @@ export default function ClassInsightShell(props: Props) {
           </div> */}
         </>
       )}
-        <div className="text-xs text-slate-500">
+      {group.title === "Ready for Extension" && (
+        <div className="mt-0 space-y-3 rounded-2xl border border-slate-200/80 bg-slate-50/80 p-4 shadow-sm text-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500">Targeted section</p>
+              <p className="text-sm font-semibold text-slate-900">Extension-ready work</p>
+              <p className="text-xs text-slate-500">
+                Every listed section captures students with 80%+ mastery so you can spotlight stretch.
+              </p>
+            </div>
+            <span className="text-xs text-slate-500">
+              {totalReadyStudents} student{totalReadyStudents === 1 ? "" : "s"}
+            </span>
+          </div>
+          {readyTargetedSections.length ? (
+            <div className="mt-3 space-y-4">
+              {readyTargetedSections.map((section) => (
+                <div
+                  key={section.sectionId}
+                  className="space-y-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm"
+                >
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-semibold text-slate-900">
+                      Targeted section · {section.sectionTitle ?? "Section"}
+                    </p>
+                    <span className="text-[11px] uppercase tracking-[0.2em] text-slate-500">
+                      {section.students.length} student{section.students.length === 1 ? "" : "s"}
+                    </span>
+                  </div>
+                  <div className="space-y-3 text-xs text-slate-700">
+                    {section.students.map((row) => (
+                      <div
+                        key={`${row.student_id}-${row.section_id ?? row.section_title}-ready`}
+                        className="rounded-2xl border border-slate-100 bg-slate-50/70 p-3 text-sm text-slate-700"
+                      >
+                        <p className="text-sm font-semibold text-slate-900">{row.student_name}</p>
+                        <div className="mt-1 flex flex-wrap gap-3 text-[11px]">
+                          <span className="text-slate-600">
+                            Adaptive:
+                            <span className={`ml-1 font-semibold ${statusToneClass(row.adaptive_status)}`}>
+                              {row.adaptive_status ?? "Pending"}
+                            </span>
+                          </span>
+                          <span className="text-slate-600">
+                            Exercises:
+                            <span className={`ml-1 font-semibold ${statusToneClass(row.exercise_status)}`}>
+                              {row.exercise_status ?? "Pending"}
+                            </span>
+                          </span>
+                          <span className="text-slate-600">
+                            Score:
+                            <span className="ml-1 font-semibold text-slate-900">
+                              {row.section_score !== null && row.section_score !== undefined
+                                ? `${Math.round(row.section_score)}%`
+                                : "--"}
+                            </span>
+                          </span>
+                        </div>
+                        <div className="mt-2 space-y-1 text-[11px] text-slate-500">
+                          <p>
+                            Adaptive last attempt:
+                            <span className="ml-1 font-semibold text-slate-900">
+                              {formatReadyTimestamp(row.adaptive_last_attempted_at) || "Pending"}
+                            </span>
+                          </p>
+                          <p>
+                            Exercises last attempt:
+                            <span className="ml-1 font-semibold text-slate-900">
+                              {formatReadyTimestamp(row.exercise_last_attempted_at) || "Pending"}
+                            </span>
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-slate-500">
+              No students currently hitting 80% or higher in an assigned section.
+            </p>
+          )}
+        </div>
+      )}
+      <div className="text-xs text-slate-500">
           {group.title === "Incomplete Objectives"
             ? "Automatic reminders target the first active section."
+            : group.title === "Ready for Extension"
+            ? ""
             : effectiveBucket
             ? `Selected section: ${effectiveBucket.sectionTitle}`
             : "Select a section to notify students at scale."}
@@ -1529,35 +1683,6 @@ export default function ClassInsightShell(props: Props) {
         (typeof row.exercise_attempted_questions === "number" && row.exercise_attempted_questions > 0),
     )
   }, [])
-
-  const resolveSectionRow = useCallback(
-    (row: StudentSectionStatus) => {
-      if (!row.student_id || !row.module_id) return row
-      const moduleCache = studentSectionsCache[row.student_id]?.[row.module_id] ?? []
-      if (!moduleCache.length) return row
-      const matchedSection = moduleCache.find((section) => {
-        if (section.section_id && row.section_id) {
-          return section.section_id === row.section_id
-        }
-        if (section.section_title && row.section_title) {
-          return section.section_title === row.section_title
-        }
-        return false
-      })
-      if (!matchedSection) return row
-      return {
-        ...row,
-        adaptive_status: matchedSection.adaptive_status ?? row.adaptive_status,
-        exercise_status: matchedSection.exercise_status ?? row.exercise_status,
-        section_score: matchedSection.section_score ?? row.section_score,
-        adaptive_last_attempted_at:
-          matchedSection.adaptive_last_attempted_at ?? row.adaptive_last_attempted_at,
-        exercise_last_attempted_at:
-          matchedSection.exercise_last_attempted_at ?? row.exercise_last_attempted_at,
-      }
-    },
-    [studentSectionsCache],
-  )
 
   const bothStatusesCompleted = (row: StudentSectionStatus) => {
     const adaptiveDone = row.adaptive_status?.trim().toLowerCase() === "completed"
@@ -2284,7 +2409,7 @@ export default function ClassInsightShell(props: Props) {
                         className="rounded-2xl border border-slate-200 p-3"
                       >
                         <p className="text-sm font-semibold text-slate-900">{entry.label}</p>
-                        <p className="text-xs text-slate-500 mb-2">{formatTimestamp(entry.timestamp)}</p>
+                        <p className="text-xs text-slate-500 mb-2">{formatReadyTimestamp(entry.timestamp)}</p>
                         <div className="space-y-2 text-sm text-slate-700">
                           {entry.message
                             .split("\n")
@@ -2397,7 +2522,7 @@ export default function ClassInsightShell(props: Props) {
                 })}
               </div>
               {activeHiddenGroup && (
-                <div className="mt-4">
+                <div className="mt-0">
                   {renderFocusGroupSectionPanel(activeHiddenGroup)}
                 </div>
               )}

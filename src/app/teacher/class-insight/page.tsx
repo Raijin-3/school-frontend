@@ -2962,6 +2962,7 @@ export default async function ClassInsightPage({
 
 
       focusGroups={focusGroups}
+      assignedSectionRows={assignedSectionRows}
 
 
 
