@@ -3,9 +3,10 @@ import { supabaseServer } from "@/lib/supabase-server"
 
 export async function GET(
   _request: NextRequest,
-  { params }: { params: { sectionId?: string } },
+  { params }: { params: Promise<{ sectionId?: string }> },
 ) {
-  const sectionId = params?.sectionId
+  const resolvedParams = await params
+  const sectionId = resolvedParams?.sectionId
   if (!sectionId) {
     return NextResponse.json(
       { error: "Section ID is required" },

@@ -118,7 +118,7 @@ export default function AcademicProgressPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100">
-      <div className="mx-auto max-w-6xl space-y-8 px-4 py-10 lg:py-14">
+      <div className="mx-auto max-w-7xl space-y-8 px-4 py-4 lg:py-5">
         <header className="rounded-3xl border border-white/60 bg-white/80 p-6 shadow-2xl shadow-slate-200/60">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
@@ -234,7 +234,10 @@ export default function AcademicProgressPage() {
               <div className="space-y-3">
                 {activeModuleSections.map((section) => {
                   const status = section.sectionStatus
-                  const sectionLabel = section.order_index ?? "?"
+                  const sectionLabel =
+                    typeof section.order_index === "number"
+                      ? section.order_index + 1
+                      : "?"
                   const summary = deriveSectionScoreSummary(section)
                   return (
                     <details
@@ -248,9 +251,20 @@ export default function AcademicProgressPage() {
                             Section {sectionLabel} • {status?.adaptiveCompleted ? "Adaptive ready" : "Adaptive pending"}
                           </p>
                         </div>
+                        <div>
+                          <p className="text-[12px] uppercase tracking-[0.1em] text-slate-400">
+                            Score:  {summary.scorePercent !== null ? (
+                                <p className="text-xl font-semibold text-slate-900">
+                                  {summary.scorePercent}%
+                                </p>
+                              ) : (
+                                <p className="text-xs text-slate-500">No attempts yet</p>
+                              )}
+                          </p>
+                        </div>
                         <div className="text-right text-[10px] text-slate-500 space-y-1">
-                          <p>Adaptive {status?.adaptiveCompleted ? "Done" : "Pending"}</p>
-                          <p>Exercises {status?.exerciseSatisfied ? "Done" : "Pending"}</p>
+                          <p>Quiz {status?.adaptiveCompleted ? "Done" : "Pending"}</p>
+                          <p>Exercise {status?.exerciseSatisfied ? "Done" : "Pending"}</p>
                         </div>
                       </summary>
                       <div className="mt-3 space-y-3 text-xs text-slate-600">
@@ -268,13 +282,13 @@ export default function AcademicProgressPage() {
                                 <p className="text-xs text-slate-500">No attempts yet</p>
                               )}
                             </div>
-                            <p className="text-xs font-semibold text-emerald-600">
+                            <p className={`text-xs font-semibold ${summary.strengthTone}`}>
                               {summary.strength}
                             </p>
                           </div>
-                          {summary.scorePercent !== null && summary.totalQuestions > 0 ? (
+                          {summary.scorePercent !== null && summary.totalAttempted > 0 ? (
                             <p className="mt-2 text-[11px] text-slate-500">
-                              {summary.totalCorrect}/{summary.totalQuestions} correct answers
+                              {summary.totalCorrect}/{summary.totalAttempted} correct answers
                             </p>
                           ) : null}
                         </div>
@@ -330,12 +344,12 @@ export default function AcademicProgressPage() {
                                 const scorePercent = Math.round(
                                   (totalCorrect / totalQuestions) * 100,
                                 )
-                                const passed = scorePercent >= 70
+                                const passed = scorePercent >= 80
                                 return (
                                   <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3 text-sm text-slate-600">
                                     <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.1em] text-slate-500">
                                       <span>Total across sessions</span>
-                                      <span>Passing ≥ 70%</span>
+                                      <span>Strong ≥ 80%</span>
                                     </div>
                                     <div className="mt-2 flex items-end justify-between gap-4">
                                       <div>

@@ -41,8 +41,6 @@ const buildClassLabel = (item: ClassRow) => {
   const parts = []
   if (item.name) parts.push(item.name)
   if (item.grade_level) parts.push(item.grade_level)
-  if (item.section_label) parts.push(`Section ${item.section_label}`)
-  if (item.academic_year) parts.push(item.academic_year)
   return parts.join(" • ") || "Unnamed class"
 }
 
@@ -72,7 +70,7 @@ export function LecturePlanningForm({ onContextChange }: LecturePlanningFormProp
   const [sectionId, setSectionId] = useState("")
 
   const [strugglingConcepts, setStrugglingConcepts] = useState("")
-  const [timeAvailableMinutes, setTimeAvailableMinutes] = useState("")
+  const [timeAvailableMinutes, setTimeAvailableMinutes] = useState("40")
   const [topicHierarchy, setTopicHierarchy] = useState("")
   const [isLoadingHierarchy, setIsLoadingHierarchy] = useState(false)
 
@@ -490,7 +488,9 @@ export function LecturePlanningForm({ onContextChange }: LecturePlanningFormProp
         </div>
 
         <div className="space-y-2">
-          <Label className="text-sm font-semibold text-slate-700">Struggling concepts</Label>
+          <Label className="text-sm font-semibold text-slate-700">
+            Struggling concepts (optional)
+          </Label>
           <Textarea
             value={strugglingConcepts}
             onChange={(event) => setStrugglingConcepts(event.target.value)}

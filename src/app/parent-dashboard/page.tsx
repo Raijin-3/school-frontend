@@ -1,7 +1,22 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { CalendarDays, ChartLine, MessageCircle, Bell, Users, CircleCheck, Award, Target, Trophy, Flame, ChevronLeft, ChevronRight, Snowflake } from "lucide-react"
+import {
+  CalendarDays,
+  ChartLine,
+  MessageCircle,
+  Bell,
+  Users,
+  CircleCheck,
+  Award,
+  Target,
+  Trophy,
+  Flame,
+  ChevronLeft,
+  ChevronRight,
+  Snowflake,
+  Clock3,
+} from "lucide-react"
 import { useParentDashboardContext, type ChildAttendance } from "@/components/parent/parent-dashboard-context"
 import { getFreezeAllowanceForTier } from "@/components/gamification/tier-benefits"
 import {
@@ -34,13 +49,13 @@ type ChildSummary = {
 }
 
 const parentMenuSections: ParentMenuSection[] = [
-  {
-    title: "My Child",
-    icon: Users,
-    accent: "from-indigo-500 to-purple-500",
-    items: ["Basic details", "Class & section", "Class teacher info", "Recent attendance log"],
-    href: "/parent-dashboard/my-child",
-  },
+  // {
+  //   title: "My Child",
+  //   icon: Users,
+  //   accent: "from-indigo-500 to-purple-500",
+  //   items: ["Basic details", "Class & section", "Class teacher info", "Recent attendance log"],
+  //   href: "/parent-dashboard/my-child",
+  // },
   {
     title: "Academic Progress",
     icon: ChartLine,
@@ -69,13 +84,13 @@ const parentMenuSections: ParentMenuSection[] = [
   //   items: ["Subject teacher list", "Messages & announcements"],
   //   href: "/parent-dashboard/teacher-communication",
   // },
-  // {
-  //   title: "Notifications",
-  //   icon: Bell,
-  //   accent: "from-rose-500 to-red-500",
-  //   items: ["Exam updates", "Homework alerts", "School announcements"],
-  //   href: "/parent-dashboard/notifications",
-  // },
+  {
+    title: "Notifications",
+    icon: Bell,
+    accent: "from-rose-500 to-red-500",
+    items: ["Exam updates", "Homework alerts", "Teacher Alert"],
+    href: "/parent-dashboard/notifications",
+  },
 ]
 
 const parentActions = [
@@ -135,7 +150,7 @@ type VisibleDay = {
 }
 
 export default function ParentDashboardPage() {
-  const { childData, parentProfile, selectedChildId } = useParentDashboardContext()
+  const { childData, parentProfile, selectedChildId, hasLinkedChildren } = useParentDashboardContext()
   const { profile, todaySubjects, alerts, classDetails, focusAreas, subjectDetails, strengths, weakAreas, teacherRemarks, teacherList, communications, notifications, attendance } = childData
   const subjectProgress = subjectDetails.map((subject) => ({
     subject: subject.subject,
@@ -156,6 +171,8 @@ export default function ParentDashboardPage() {
   const [moduleSectionsError, setModuleSectionsError] = useState<string | null>(null)
 
   const [selectedModuleReference, setSelectedModuleReference] = useState<{ subject: string; moduleId: string } | null>(null)
+
+  const [openSubjectIndex, setOpenSubjectIndex] = useState(0)
 
   const [childSummary, setChildSummary] = useState<ChildSummary | null>(null)
   const [isSummaryLoading, setIsSummaryLoading] = useState(true)
@@ -313,7 +330,7 @@ export default function ParentDashboardPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/50">
-      <div className="mx-auto max-w-6xl space-y-8 px-4 py-10 lg:py-14">
+      <div className="mx-auto max-w-7xl space-y-8 px-4 py-4 lg:py-5">
         <header className="rounded-3xl border border-white/60 bg-white/80 p-6 shadow-2xl shadow-slate-200/60 backdrop-blur-xl">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             
@@ -432,11 +449,14 @@ export default function ParentDashboardPage() {
                 <p className="text-sm font-semibold text-slate-500">Alerts & messages</p>
                 <h2 className="text-lg font-bold text-slate-900">Need attention</h2>
               </div>
-              <span className="text-xs uppercase tracking-wide text-slate-500">Sync every 4h</span>
+              {/* <span className="text-xs uppercase tracking-wide text-slate-500">Sync every 4h</span> */}
             </div>
             <div className="mt-4 space-y-3">
-              {alerts.map((alert) => (
-                <div key={alert.title} className="rounded-2xl border border-slate-200/60 bg-slate-50/80 p-3">
+              {alerts.map((alert, index) => (
+                <div
+                  key={`${alert.title ?? "alert"}-${alert.time ?? "time"}-${index}`}
+                  className="rounded-2xl border border-slate-200/60 bg-slate-50/80 p-3"
+                >
                   <p className="text-sm font-semibold text-slate-900">{alert.title}</p>
                   <p className="text-xs text-slate-500">{alert.detail}</p>
                   <p className="mt-1 text-xs font-semibold text-indigo-600">{alert.time}</p>
@@ -467,17 +487,28 @@ export default function ParentDashboardPage() {
           </div>
         </section>
 
-        <section className="grid gap-6 md:grid-cols-2">
-          <article className="rounded-3xl border border-white/70 bg-white/80 p-6 shadow-xl shadow-slate-200/60 backdrop-blur-xl">
+        <section className="grid gap-0 md:grid-cols-[40%_60%]">
+          <article className="rounded-xl border border-white/70 bg-white/80 p-6 backdrop-blur-xl">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-bold text-slate-900">Subject-wise progress</h3>
               <span className="text-xs uppercase tracking-wider text-slate-500">Updated today</span>
             </div>
             <div className="mt-5 space-y-3">
-              {subjectDetails.map((subject) => {
+              {subjectDetails.map((subject, index) => {
                 const completion = Math.max(0, Math.min(100, subject.completion))
                 return (
-                  <details key={subject.subject} className="group rounded-2xl border border-slate-100 bg-white/70 p-4 shadow-sm">
+                  <details
+                    key={subject.subject}
+                    className="group rounded-2xl border border-slate-100 bg-white/70 p-4 shadow-sm"
+                    open={openSubjectIndex === index}
+                    onToggle={(event) => {
+                      if (event.currentTarget.open) {
+                        setOpenSubjectIndex(index)
+                      } else if (openSubjectIndex === index) {
+                        setOpenSubjectIndex(-1)
+                      }
+                    }}
+                  >
                     <summary className="flex cursor-pointer items-center justify-between gap-4 text-sm font-semibold text-slate-700">
                       <span>{subject.subject}</span>
                       <span className="text-xs font-normal uppercase tracking-wide text-slate-500">{completion}% complete</span>
@@ -565,10 +596,10 @@ export default function ParentDashboardPage() {
             </div>
           </article>
 
-          <article className="rounded-3xl border border-white/70 bg-white/80 p-6 shadow-xl shadow-slate-200/60 backdrop-blur-xl">
+          <article className="rounded-0xl border border-white/70 bg-white/80 p-6 backdrop-blur-xl">
             <h3 className="text-lg font-bold text-slate-900">Topic completion & assessments</h3>
             <div className="mt-5 space-y-4 text-sm text-slate-600">
-              <div className="rounded-2xl border border-slate-200/70 bg-slate-50/70 p-4">
+              <div className="rounded-xl border border-slate-200/70 bg-slate-50/70 p-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <p className="text-xs uppercase tracking-wide text-slate-500">Module focus</p>
@@ -604,7 +635,7 @@ export default function ParentDashboardPage() {
               </button>
             ) : null}
           </div>
-          <div className="rounded-2xl border border-slate-200/70 bg-white/80 p-4 text-sm text-slate-600">
+          <div className="rounded-xl border border-slate-200/70 bg-white/80 p-4 text-sm text-slate-600">
             <div className="flex items-center justify-between">
               <p className="text-xs uppercase tracking-wide text-slate-500">Sections</p>
               {moduleSectionsLoading && (
@@ -618,295 +649,122 @@ export default function ParentDashboardPage() {
             ) : moduleSectionsError ? (
               <p className="mt-3 text-xs text-rose-500">{moduleSectionsError}</p>
             ) : moduleSections.length > 0 ? (
-              <div className="mt-3 space-y-3">
-                {moduleSections.map((section) => {
-                  const status = section.sectionStatus
-                  const sectionLabel = section.order_index ?? "?"
-                  const summary = deriveSectionScoreSummary(section)
-                  const practiceExercises = section.practiceExercises ?? []
-                  const totalPracticeQuestions = practiceExercises.reduce(
-                    (sum, exercise) => sum + (exercise.questionCount ?? 0),
-                    0,
-                  )
-                  const totalPracticeCorrect = practiceExercises.reduce(
-                    (sum, exercise) => sum + (exercise.correctQuestionCount ?? 0),
-                    0,
-                  )
-                  const totalPracticeScorePercent =
-                    totalPracticeQuestions > 0
-                      ? Math.round(
-                          (totalPracticeCorrect / totalPracticeQuestions) * 100,
+              <div className="mt-3 overflow-hidden rounded-xl border border-slate-200 bg-white/80 shadow-sm">
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-xs text-slate-600">
+                    <thead>
+                      <tr>
+                        <th className="border-b border-slate-200 bg-slate-50 px-3 py-2 text-left font-semibold tracking-wide text-[10px] uppercase text-slate-500">
+                          Section
+                        </th>
+                        <th className="border-b border-slate-200 bg-slate-50 px-3 py-2 text-left font-semibold tracking-wide text-[10px] uppercase text-slate-500">
+                          Status
+                        </th>
+                        <th className="border-b border-slate-200 bg-slate-50 px-3 py-2 text-left font-semibold tracking-wide text-[10px] uppercase text-slate-500">
+                          Score
+                        </th>
+                        <th className="border-b border-slate-200 bg-slate-50 px-3 py-2 text-left font-semibold tracking-wide text-[10px] uppercase text-slate-500">
+                          Attempts
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {moduleSections.map((section) => {
+                        const status = section.sectionStatus
+                        const sectionLabel =
+                          typeof section.order_index === "number"
+                            ? section.order_index + 1
+                            : "?"
+                        const summary = deriveSectionScoreSummary(section)
+                        const practiceExercises = section.practiceExercises ?? []
+                        const totalPracticeQuestions = practiceExercises.reduce(
+                          (sum, exercise) => sum + (exercise.questionCount ?? 0),
+                          0,
                         )
-                      : null
-                  const practicePassed =
-                    typeof totalPracticeScorePercent === "number"
-                      ? totalPracticeScorePercent >= 70
-                      : false
-                  return (
-                    <details
-                      key={section.id}
-                      className="rounded-2xl border border-slate-100 bg-white/90 p-3 transition hover:border-slate-300"
-                    >
-                      <summary className="flex cursor-pointer items-center justify-between text-sm font-semibold text-slate-700">
-                        <div>
-                          <p>{section.title}</p>
-                          <p className="text-[10px] uppercase tracking-[0.1em] text-slate-400">
-                            Section {sectionLabel} • {status?.adaptiveCompleted ? "Adaptive ready" : "Adaptive pending"}
-                          </p>
-                        </div>
-                        <div className="text-right text-[10px] text-slate-500 space-y-1">
-                          <p>
-                            Adaptive {status?.adaptiveCompleted ? "Done" : "Pending"}
-                          </p>
-                          <p>
-                            Exercises {status?.exerciseSatisfied ? "Done" : "Pending"}
-                          </p>
-                        </div>
-                      </summary>
-                      <div className="mt-3 space-y-3 text-xs text-slate-600">
-                        <div className="rounded-2xl border border-slate-200 bg-white/80 p-3 text-sm text-slate-600">
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500">
-                                Section score
+                        const totalPracticeCorrect = practiceExercises.reduce(
+                          (sum, exercise) => sum + (exercise.correctQuestionCount ?? 0),
+                          0,
+                        )
+                        const totalPracticeScorePercent =
+                          totalPracticeQuestions > 0
+                            ? Math.round(
+                                (totalPracticeCorrect / totalPracticeQuestions) * 100,
+                              )
+                            : null
+                        const practicePassed =
+                          typeof totalPracticeScorePercent === "number"
+                            ? totalPracticeScorePercent >= 80
+                            : false
+                        const adaptiveAttempted = (section.adaptiveSessions ?? []).reduce(
+                          (sum, session) => sum + (session.answeredQuestions ?? 0),
+                          0,
+                        )
+                        const practiceAttempts = practiceExercises.reduce(
+                          (sum, exercise) => sum + (exercise.attemptedQuestions ?? 0),
+                          0,
+                        )
+                        return (
+                          <tr key={section.id} className="border-b border-slate-100">
+                            <td className="px-3 py-3 align-top">
+                              <p className="text-sm font-semibold text-slate-900">
+                                {section.title ?? "Untitled section"}
                               </p>
+                              <p className="text-[10px] text-slate-500">
+                                Section {sectionLabel}
+                              </p>
+                            </td>
+                            <td className="px-3 py-3 align-top">
+                              <div className="flex items-center gap-1">
+                                Quiz: 
+                                <SectionStatusIcon
+                                  label="Adaptive quiz status"
+                                  completed={status?.adaptiveCompleted}
+                                />
+                                Exercise:
+                                <SectionStatusIcon
+                                  label="Exercise completion status"
+                                  completed={status?.exerciseSatisfied}
+                                />
+                              </div>
+                            </td>
+                            <td className="px-3 py-3 align-top">
                               {summary.scorePercent !== null ? (
                                 <p className="text-2xl font-semibold text-slate-900">
                                   {summary.scorePercent}%
                                 </p>
                               ) : (
-                                <p className="text-xs text-slate-500">No attempts yet</p>
+                                <p className="text-xs text-slate-500">No score yet</p>
                               )}
-                            </div>
-                            <p className="text-xs font-semibold text-emerald-600">
-                              {summary.strength}
-                            </p>
-                          </div>
-                          {summary.scorePercent !== null && summary.totalQuestions > 0 ? (
-                            <p className="mt-2 text-[11px] text-slate-500">
-                              {summary.totalCorrect}/{summary.totalQuestions} correct answers
-                            </p>
-                          ) : null}
-                        </div>
-                        {/* <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-3">
-                          <p className="text-[10px] uppercase tracking-[0.1em] text-slate-500">
-                            Adaptive quiz sessions
-                          </p>
-                          {section.adaptiveSessions && section.adaptiveSessions.length > 0 ? (
-                            <>
-                              <div className="mt-2 space-y-2">
-                                {section.adaptiveSessions.map((session) => {
-                                  const dateLabel = session.createdAt
-                                    ? new Date(session.createdAt).toLocaleDateString(
-                                      "en-US",
-                                      {
-                                        month: "short",
-                                        day: "numeric",
-                                      },
-                                    )
-                                    : "Unknown date"
-                                  return (
-                                    <div
-                                      key={session.sessionId}
-                                      className="rounded-2xl border border-slate-100 bg-white/90 px-3 py-2"
-                                    >
-                                      <div className="flex items-center justify-between text-[11px] font-semibold text-slate-900">
-                                        <span>{session.mainTopic ?? "Adaptive quiz"}</span>
-                                        <span>{session.scorePercent}%</span>
-                                      </div>
-                                      <p className="text-[10px] text-slate-500">
-                                        {session.questionCount} questions • {session.correctAnswers} correct
-                                      </p>
-                                      <p className="text-[10px] text-slate-400">{dateLabel}</p>
-                                      <p className={`text-[10px] font-semibold ${session.passed ? "text-emerald-600" : "text-rose-500"}`}>
-                                        {session.passed ? "Passed" : "Needs review"}
-                                      </p>
-                                    </div>
-                                  )
-                                })}
-                              </div>
-
-                              {(() => {
-                                const adaptiveSessions = section.adaptiveSessions ?? []
-                                const totalQuestions = adaptiveSessions.reduce(
-                                  (sum, session) => sum + (session.questionCount ?? 0),
-                                  0,
-                                )
-                                const totalCorrect = adaptiveSessions.reduce(
-                                  (sum, session) => sum + (session.correctAnswers ?? 0),
-                                  0,
-                                )
-                                if (totalQuestions === 0) {
-                                  return null
-                                }
-                                const scorePercent = Math.round(
-                                  (totalCorrect / totalQuestions) * 100,
-                                )
-                                const passed = scorePercent >= 70
-                                return (
-                                  <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3 text-sm text-slate-600">
-                                    <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.3em] text-slate-500">
-                                      <span>Total across sessions</span>
-                                      <span>Passing ≥ 70%</span>
-                                    </div>
-                                    <div className="mt-2 flex items-end justify-between gap-4">
-                                      <div>
-                                        <p className="text-2xl font-semibold text-slate-900">
-                                          {totalQuestions} question{totalQuestions === 1 ? "" : "s"}
-                                        </p>
-                                        <p className="text-[11px] text-slate-500">
-                                          {totalCorrect}/{totalQuestions} correct answers
-                                        </p>
-                                      </div>
-                                      <div className="text-right">
-                                        <p className="text-xs font-semibold text-slate-500">score</p>
-                                        <p className="text-2xl font-semibold text-slate-900">{scorePercent}%</p>
-                                        <p
-                                          className={`mt-1 inline-flex rounded-full px-3 py-1 text-[10px] font-semibold ${
-                                            passed ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-600"
-                                          }`}
-                                        >
-                                          {passed ? "Passed" : "Needs review"}
-                                        </p>
-                                      </div>
-                                    </div>
-                                  </div>
-                                )
-                              })()}
-                            </>
-                          ) : (
-                            <p className="mt-2 text-[11px] text-slate-500">
-                              No adaptive quiz sessions recorded for this section yet.
-                            </p>
-                          )}
-                        </div>
-                        <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-3">
-                          <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500">
-                            Practice exercises
-                          </p>
-                          {practiceExercises.length > 0 ? (
-                            <>
-                              <div className="mt-2 space-y-2">
-                                {practiceExercises.map((exercise) => {
-                                  const attemptedQuestion = exercise.attemptedQuestion
-                                  const questionText = attemptedQuestion?.text?.trim()
-                                  const questionStatus =
-                                    attemptedQuestion?.statusLabel ?? exercise.latestVerdict
-                                  const scorePercent = getPracticeExerciseScorePercent(
-                                    exercise,
-                                  )
-                                  const scoreLabel =
-                                    typeof scorePercent === "number"
-                                      ? `${scorePercent}%`
-                                      : null
-                                  const questionCount = Math.max(
-                                    0,
-                                    exercise.questionCount ?? 0,
-                                  )
-                                  const attemptedQuestions = Math.max(
-                                    0,
-                                    exercise.attemptedQuestions ?? 0,
-                                  )
-                                  const attemptsLabel = `${attemptedQuestions}/${questionCount}`
-                                  const attemptDetailLabel =
-                                    questionText && questionText.length > 0
-                                      ? questionText
-                                      : `Questions attempted: ${attemptsLabel}`
-                                  const displayStatus =
-                                    exercise.displayStatus ??
-                                    exercise.status ??
-                                    "Status pending"
-                                  return (
-                                    <div
-                                      key={exercise.id}
-                                      className="rounded-2xl border border-slate-100 bg-white/90 px-3 py-2"
-                                    >
-                                      <div className="flex items-center justify-between text-[10px] font-semibold text-slate-500">
-                                        <span>{exercise.type ?? "Practice"}</span>
-                                        <span>{exercise.difficulty ?? "Level"}</span>
-                                      </div>
-                                      <p className="mt-1 text-xs font-semibold text-slate-900">
-                                        {exercise.title}
-                                      </p>
-                                      {exercise.description ? (
-                                        <p className="text-[11px] text-slate-500">
-                                          {exercise.description}
-                                        </p>
-                                      ) : null}
-                                      <p className="mt-2 text-[11px] text-slate-500 leading-snug">
-                                        {attemptDetailLabel}
-                                      </p>
-                                      {questionStatus ? (
-                                        <p className="text-[10px] font-semibold text-emerald-600">
-                                          {questionStatus}
-                                        </p>
-                                      ) : null}
-                                      <div className="mt-2 flex items-center justify-between text-[10px] text-slate-500">
-                                        <span className="font-semibold text-slate-600">
-                                          {displayStatus}
-                                        </span>
-                                        <span>Attempts {attemptsLabel}</span>
-                                      </div>
-                                      <div className="mt-1 flex items-center justify-between text-[10px] text-slate-500">
-                                        <span className="font-semibold text-slate-500">
-                                          Score: {scoreLabel ?? "Pending"}
-                                        </span>
-                                        {questionCount > 0 ? (
-                                          <span className="text-slate-500">
-                                            {exercise.correctQuestionCount ??
-                                              0}/{questionCount} correct
-                                          </span>
-                                        ) : null}
-                                      </div>
-                                    </div>
-                                  )
-                                })}
-                              </div>
-                              {totalPracticeQuestions > 0 ? (
-                                <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3 text-sm text-slate-600">
-                                  <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.3em] text-slate-500">
-                                    <span>Practice total</span>
-                                    <span>Passing ≥ 70%</span>
-                                  </div>
-                                  <div className="mt-2 flex items-end justify-between gap-4">
-                                    <div>
-                                      <p className="text-2xl font-semibold text-slate-900">
-                                        {totalPracticeQuestions} question
-                                        {totalPracticeQuestions === 1 ? "" : "s"}
-                                      </p>
-                                      <p className="text-[11px] text-slate-500">
-                                        {totalPracticeCorrect}/{totalPracticeQuestions} correct answers
-                                      </p>
-                                    </div>
-                                    <div className="text-right">
-                                      <p className="text-xs font-semibold text-slate-500">score</p>
-                                      <p className="text-2xl font-semibold text-slate-900">
-                                        {totalPracticeScorePercent ?? 0}%
-                                      </p>
-                                      <p
-                                        className={`mt-1 inline-flex rounded-full px-3 py-1 text-[10px] font-semibold ${
-                                          practicePassed
-                                            ? "bg-emerald-50 text-emerald-700"
-                                            : "bg-rose-50 text-rose-600"
-                                        }`}
-                                      >
-                                        {practicePassed ? "Passed practice" : "Needs practice"}
-                                      </p>
-                                    </div>
-                                  </div>
-                                </div>
-                              ) : null}
-                            </>
-                          ) : (
-                            <p className="mt-2 text-[11px] text-slate-500">
-                              Practice exercises will appear once attempts are synced.
-                            </p>
-                          )}
-                        </div> */}
-                      </div>
-                    </details>
-                  )
-                })}
+                              <p className={`mt-1 text-[10px] font-semibold ${summary.strengthTone}`}>
+                                {summary.strength}
+                              </p>
+                            </td>
+                            <td className="px-3 py-3 align-top text-[12px] text-slate-700">
+                              {summary.totalAttempted > 0 ? (
+                                <>
+                                  <p className="font-semibold text-slate-900">
+                                    {summary.totalCorrect}/{summary.totalAttempted} correct
+                                  </p>
+                                  <p>
+                                    Quiz: {adaptiveAttempted} | Exercise: {practiceAttempts}
+                                  </p>
+                                  {/* {totalPracticeQuestions > 0 && (
+                                    <p className="text-[10px] text-slate-500">
+                                      Practice score: {totalPracticeScorePercent ?? 0}% -
+                                      {practicePassed ? " Passed" : " Needs practice"}
+                                    </p>
+                                  )} */}
+                                </>
+                              ) : (
+                                <p className="text-slate-500">No attempts recorded yet</p>
+                              )}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             ) : (
               <p className="mt-3 text-xs text-slate-500">
@@ -990,10 +848,13 @@ export default function ParentDashboardPage() {
         </section>
 
         <section className="grid gap-6">
-          <ParentDailyStreakCalendar attendance={attendance} childId={selectedChildId} />
+          <ParentDailyStreakCalendar
+            attendance={attendance}
+            childId={hasLinkedChildren ? selectedChildId : undefined}
+          />
         </section>
 
-        <section className="rounded-3xl border border-white/70 bg-white/85 p-6 shadow-xl shadow-slate-200/60 backdrop-blur-xl">
+        {/* <section className="rounded-3xl border border-white/70 bg-white/85 p-6 shadow-xl shadow-slate-200/60 backdrop-blur-xl">
           <div className="flex flex-col gap-6 lg:flex-row">
             <div className="flex-1 space-y-4">
               <h3 className="text-lg font-bold text-slate-900">Performance insights</h3>
@@ -1036,7 +897,7 @@ export default function ParentDashboardPage() {
               </div>
             </div>
           </div>
-        </section>
+        </section> */}
 
         {/* <section className="grid gap-6 lg:grid-cols-2">
           <article className="rounded-3xl border border-white/70 bg-white/85 p-6 shadow-xl shadow-slate-200/60 backdrop-blur-xl">
@@ -1332,11 +1193,20 @@ function ParentDailyStreakCalendar({
   useEffect(() => {
     let active = true
     const loadStreakData = async () => {
+      if (!childId) {
+        setStreakError(null)
+        setStreakPayload(null)
+        if (active) {
+          setIsLoadingStreak(false)
+        }
+        return
+      }
+
       try {
         setIsLoadingStreak(true)
         setStreakError(null)
         setStreakPayload(null)
-        const query = childId ? `?child_id=${encodeURIComponent(childId)}` : ""
+        const query = `?child_id=${encodeURIComponent(childId)}`
         const response = await fetch(`/api/parent/streak${query}`)
         if (!response.ok) {
           const text = await response.text()
@@ -1595,6 +1465,22 @@ function ParentDailyStreakCalendar({
         </>
       )}
     </article>
+  )
+}
+
+type SectionStatusIconProps = {
+  label: string
+  completed?: boolean | null
+}
+
+function SectionStatusIcon({ label, completed }: SectionStatusIconProps) {
+  const Icon = completed ? CircleCheck : Clock3
+  const tone = completed ? "text-emerald-500" : "text-amber-400"
+  return (
+    <span className="flex flex-col items-center">
+      <Icon className={`h-4 w-4 ${tone}`} aria-hidden="true" />
+      <span className="sr-only">{label} {completed ? "done" : "pending"}</span>
+    </span>
   )
 }
 
