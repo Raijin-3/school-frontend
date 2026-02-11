@@ -77,6 +77,7 @@ export function PlannedLectureList({ context }: PlannedLectureListProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null)
+  const [arePlanDetailsOpen, setPlanDetailsOpen] = useState(true)
 
   const queryKey = useMemo(
     () =>
@@ -90,6 +91,13 @@ export function PlannedLectureList({ context }: PlannedLectureListProps) {
         : "",
     [context],
   )
+
+  const selectedPlan = plans.find((plan) => plan.id === selectedPlanId) ?? plans[0]
+  useEffect(() => {
+    if (selectedPlan) {
+      setPlanDetailsOpen(true)
+    }
+  }, [selectedPlan])
 
   useEffect(() => {
     if (!context) {
@@ -167,7 +175,6 @@ export function PlannedLectureList({ context }: PlannedLectureListProps) {
     )
   }
 
-  const selectedPlan = plans.find((plan) => plan.id === selectedPlanId) ?? plans[0]
   if (!plans.length) {
     return (
       <div className="rounded-2xl border border-dashed border-slate-200/80 bg-slate-50/70 p-6 text-sm text-slate-500">
@@ -211,7 +218,10 @@ export function PlannedLectureList({ context }: PlannedLectureListProps) {
           Selected plan
           <select
             value={selectedPlan?.id ?? ""}
-            onChange={(event) => setSelectedPlanId(event.target.value)}
+            onChange={(event) => {
+              setSelectedPlanId(event.target.value)
+              setPlanDetailsOpen(true)
+            }}
             className="mt-1 h-9 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-700 shadow-sm focus:border-slate-400 focus:outline-none"
           >
             {plans.map((plan, index) => {
@@ -231,7 +241,11 @@ export function PlannedLectureList({ context }: PlannedLectureListProps) {
         </label>
       </div>
 
-      <details className="group rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <details
+        className="group rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+        open={arePlanDetailsOpen}
+        onToggle={(event) => setPlanDetailsOpen(event.currentTarget.open)}
+      >
         <summary className="cursor-pointer text-sm font-semibold uppercase tracking-wide text-slate-500">
           Plan details
         </summary>
