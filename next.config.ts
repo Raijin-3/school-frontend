@@ -32,6 +32,14 @@ const nextConfig: NextConfig = {
         source: '/api/proxy/:path*',
         destination: `${destination}/:path*`,
       },
+      {
+        source: '/revision-notes',
+        destination: `${destination}/revision-notes`,
+      },
+      {
+        source: '/lecture-planning',
+        destination: `${destination}/lecture-planning`,
+      },
     ];
   },
   typescript: {
