@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { supabaseServer } from "@/lib/supabase-server"
 import { apiPost } from "@/lib/api"
 
-const AI_BASE_URL = (process.env.JARVIS_AI_URL ?? "http://localhost:8000").replace(/\/$/, "")
+const AI_BASE_URL = (process.env.BASE_AI_API_URL ?? "http://localhost:8000").replace(/\/$/, "")
 
 type RevisionNotesRequestBody = {
   sectionId?: string
