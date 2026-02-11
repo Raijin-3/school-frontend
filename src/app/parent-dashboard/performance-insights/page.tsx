@@ -164,10 +164,10 @@ export default function PerformanceInsightsPage() {
       0,
     )
     const average = Math.round(total / scored.length)
-    if (average >= 70) {
+    if (average >= 80) {
       return { label: "Strong performance", tone: "text-emerald-600" }
     }
-    if (average >= 50) {
+    if (average >= 51) {
       return { label: "Average performance", tone: "text-amber-600" }
     }
     return { label: "Needs attention", tone: "text-rose-600" }
@@ -183,9 +183,9 @@ export default function PerformanceInsightsPage() {
         weakList.push(entry)
         return
       }
-      if (score >= 70) {
+      if (score >= 80) {
         strengthsList.push(entry)
-      } else if (score >= 50) {
+      } else if (score >= 51) {
         averageList.push(entry)
       } else {
         weakList.push(entry)
@@ -206,7 +206,7 @@ export default function PerformanceInsightsPage() {
       {
         id: "strengths",
         label: "Strengths",
-        description: "Score ≥ 70%",
+        description: "Score ≥ 80%",
         icon: Target,
         emptyLabel: "No strong sections yet.",
         items: sectionCategories.strengths,
@@ -214,7 +214,7 @@ export default function PerformanceInsightsPage() {
       {
         id: "average",
         label: "Average",
-        description: "Score between 50% and 69%",
+        description: "Score between 50% and 80%",
         icon: PieChart,
         emptyLabel: "No average-range sections tracked yet.",
         items: sectionCategories.average,
@@ -232,7 +232,7 @@ export default function PerformanceInsightsPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100">
-      <div className="mx-auto max-w-6xl space-y-8 px-4 py-10 lg:py-14">
+      <div className="mx-auto max-w-7xl space-y-8 px-4 py-4 lg:py-5">
         <header className="rounded-3xl border border-white/60 bg-white/80 p-6 shadow-2xl shadow-slate-200/60">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
@@ -334,8 +334,11 @@ export default function PerformanceInsightsPage() {
 function SectionEntryCard({ entry }: { entry: SectionInsight }) {
   const scorePercent = entry.summary.scorePercent
   const scoreLabel = scorePercent !== null ? `${scorePercent}%` : "Pending"
-  const questionCount = Math.max(0, entry.summary.totalQuestions)
-  const questionLabel = questionCount > 0 ? `${questionCount} question${questionCount === 1 ? "" : "s"}` : "No questions recorded"
+  const attemptedCount = Math.max(0, entry.summary.totalAttempted)
+  const questionLabel =
+    attemptedCount > 0
+      ? `${attemptedCount} attempted question${attemptedCount === 1 ? "" : "s"}`
+      : "No attempts recorded"
   return (
     <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 text-sm text-slate-600">
       <div className="flex items-start justify-between gap-4">
@@ -353,9 +356,9 @@ function SectionEntryCard({ entry }: { entry: SectionInsight }) {
         </div>
       </div>
       <p className="mt-2 text-[11px] text-slate-500">
-        {Math.max(0, entry.summary.totalCorrect)}/{questionCount} correct answers
+        {Math.max(0, entry.summary.totalCorrect)}/{attemptedCount} correct answers
       </p>
-      <p className="text-[10px] font-semibold text-emerald-600">
+      <p className={`text-[10px] font-semibold ${entry.summary.strengthTone}`}>
         {entry.summary.strength}
       </p>
     </div>

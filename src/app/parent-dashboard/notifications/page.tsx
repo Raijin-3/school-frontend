@@ -1,14 +1,31 @@
 "use client"
 
-import { useParentDashboardContext } from "@/components/parent/parent-dashboard-context"
+import { Bell } from "lucide-react"
+import { type ChildNotification, useParentDashboardContext } from "@/components/parent/parent-dashboard-context"
+import { formatNotificationTime } from "@/lib/notification-utils"
 
 export default function NotificationsPage() {
   const { childData } = useParentDashboardContext()
   const { notifications } = childData
 
+  const getNotificationKey = (notification: ChildNotification, index: number) => {
+    if (notification.id) {
+      return notification.id
+    }
+    const fallbackParts = [
+      notification.title,
+      notification.due,
+      notification.timestamp,
+      notification.detail,
+    ]
+      .filter(Boolean)
+      .join("-")
+    return `${fallbackParts || "notification"}-${index}`
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100">
-      <div className="mx-auto max-w-6xl space-y-8 px-4 py-10 lg:py-14">
+      <div className="mx-auto max-w-7xl space-y-8 px-4 py-4 lg:py-4">
         <header className="rounded-3xl border border-white/70 bg-white/90 p-6 shadow-2xl shadow-slate-200/60">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
@@ -32,8 +49,11 @@ export default function NotificationsPage() {
             <span className="text-xs uppercase tracking-wider text-slate-500">Critical</span>
           </div>
           <div className="mt-5 space-y-3">
-            {notifications.examUpdates.map((item) => (
-              <article key={item.title} className="flex flex-col gap-2 rounded-2xl border border-slate-100 bg-slate-50/80 p-4 text-sm text-slate-600">
+            {notifications.examUpdates.map((item, index) => (
+              <article
+                key={getNotificationKey(item, index)}
+                className="flex flex-col gap-2 rounded-2xl border border-slate-100 bg-slate-50/80 p-4 text-sm text-slate-600"
+              >
                 <div className="flex items-center justify-between">
                   <h3 className="text-base font-semibold text-slate-900">{item.title}</h3>
                   <span className="rounded-full border border-indigo-200 px-3 py-1 text-xs font-semibold text-indigo-600">{item.status ?? "New"}</span>
@@ -51,8 +71,11 @@ export default function NotificationsPage() {
             <span className="text-xs uppercase tracking-wider text-slate-500">Stay ahead</span>
           </div>
           <div className="mt-5 grid gap-4 md:grid-cols-3">
-            {notifications.homeworkAlerts.map((alert) => (
-              <article key={alert.title} className="flex flex-col gap-2 rounded-2xl border border-slate-100 bg-slate-50/90 p-4 text-sm text-slate-600">
+            {notifications.homeworkAlerts.map((alert, index) => (
+              <article
+                key={getNotificationKey(alert, index)}
+                className="flex flex-col gap-2 rounded-2xl border border-slate-100 bg-slate-50/90 p-4 text-sm text-slate-600"
+              >
                 <div className="flex items-center justify-between text-xs uppercase tracking-wider text-slate-500">
                   <span>{alert.title}</span>
                   <span className="font-semibold text-slate-700">{alert.due ?? "Soon"}</span>
@@ -65,21 +88,38 @@ export default function NotificationsPage() {
 
         <section className="rounded-3xl border border-white/70 bg-gradient-to-br from-indigo-600 to-slate-900 p-6 text-white shadow-xl shadow-indigo-500/40 backdrop-blur-xl">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-bold">School announcements</h2>
+            <h2 className="text-lg font-bold">Teacher announcements</h2>
             <span className="text-xs uppercase tracking-wider text-white/70">Important</span>
           </div>
           <div className="mt-5 space-y-4 text-sm">
-            {notifications.announcements.map((announcement) => (
-              <article key={announcement.title} className="flex items-start gap-4 rounded-2xl border border-white/30 bg-white/10 p-4">
-                <div className="mt-0.5 text-white/80">
-                  <announcement.icon className="h-6 w-6" />
-                </div>
-                <div className="flex-1">
-                  <p className="font-semibold">{announcement.title}</p>
-                  <p className="text-xs text-white/70">{announcement.detail}</p>
-                </div>
-              </article>
-            ))}
+            {notifications.announcements.map((announcement, index) => {
+              const announcementDateLabel = formatNotificationTime(
+                announcement.timestamp ?? announcement.metadata?.classTiming ?? undefined,
+              )
+              return (
+                <article
+                  key={getNotificationKey(announcement, index)}
+                  className="flex items-start gap-4 rounded-2xl border border-white/30 bg-white/10 p-4"
+                >
+                  <div className="mt-0.5 text-white/80">
+                    {announcement.icon ? (
+                      <announcement.icon className="h-6 w-6" />
+                    ) : (
+                      <Bell className="h-6 w-6" />
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-semibold text-xm">{announcement.title}</p>
+                    <p className="text-xm text-white/70">{announcement.detail}</p>
+                    {announcementDateLabel && (
+                      <p className="text-[0.65rem] uppercase tracking-wider text-white/60">
+                        {announcementDateLabel}
+                      </p>
+                    )}
+                  </div>
+                </article>
+              )
+            })}
           </div>
         </section>
       </div>

@@ -1,6 +1,16 @@
 "use client"
 
-import { BellRing, BookOpen, CalendarDays, MessageSquare, Star } from "lucide-react"
+import {
+  BellRing,
+  BookOpen,
+  CalendarDays,
+  MessageSquare,
+  Star,
+  type LucideIcon,
+} from "lucide-react"
+import { formatNotificationTime, type NotificationMetadata } from "@/lib/notification-utils"
+import { getNotificationMessage } from "@/lib/notification-message"
+
 import { createContext, ReactNode, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 
 type StatusColor = "Present" | "Absent" | "Holiday" | "Weekend"
@@ -45,11 +55,108 @@ export type ChildCommunication = {
 }
 
 export type ChildNotification = {
+  id?: string
   title: string
   detail: string
   status?: string
   due?: string
-  icon?: ReactNode
+  icon?: LucideIcon
+  metadata?: NotificationMetadata
+  timestamp?: string
+  category?: ParentNotificationCategoryKey
+}
+
+type ParentNotificationCategoryKey = "examUpdates" | "homeworkAlerts" | "announcements"
+
+type StudentNotificationRow = {
+  id: string
+  action_label?: string | null
+  message?: string | null
+  metadata?: NotificationMetadata
+  created_at?: string | null
+  is_read?: boolean | null
+}
+
+const EXAM_KEYWORDS = ["exam", "assessment", "test", "midterm", "summative", "quiz"]
+const HOMEWORK_KEYWORDS = ["homework", "assignment", "practice", "worksheet", "project"]
+const ANNOUNCEMENT_KEYWORDS = ["announcement", "news", "notice", "broadcast", "school", "assembly", "reminder"]
+
+const CATEGORY_ICON_MAP: Record<ParentNotificationCategoryKey, LucideIcon> = {
+  examUpdates: Star,
+  homeworkAlerts: BookOpen,
+  announcements: BellRing,
+}
+
+function deriveNotificationCategory(row: StudentNotificationRow): ParentNotificationCategoryKey {
+  const context = [
+    row.action_label,
+    row.message,
+    row.metadata?.sectionTitle,
+    row.metadata?.classTiming,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase()
+
+  if (EXAM_KEYWORDS.some((keyword) => context.includes(keyword))) {
+    return "examUpdates"
+  }
+  if (HOMEWORK_KEYWORDS.some((keyword) => context.includes(keyword))) {
+    return "homeworkAlerts"
+  }
+  if (ANNOUNCEMENT_KEYWORDS.some((keyword) => context.includes(keyword))) {
+    return "announcements"
+  }
+  return "announcements"
+}
+
+function normalizeParentNotifications(rows: StudentNotificationRow[]): ChildNotification[] {
+  return rows.map((row) => {
+    const category = deriveNotificationCategory(row)
+    const actionLabel = row.action_label?.trim()
+    const messageText = row.message?.trim()
+    const fallbackDetail = getNotificationMessage(row) || actionLabel || "Update from school"
+    return {
+      id: row.id,
+      title: actionLabel || fallbackDetail,
+      detail: messageText || fallbackDetail,
+      metadata: row.metadata ?? null,
+      timestamp: row.created_at ?? undefined,
+      status: row.metadata?.status ?? undefined,
+      due: row.metadata?.due ?? undefined,
+      icon: CATEGORY_ICON_MAP[category],
+      category,
+    }
+  })
+}
+
+function categorizeParentNotifications(rows: ChildNotification[]): Record<ParentNotificationCategoryKey, ChildNotification[]> {
+  return rows.reduce(
+    (acc, notification) => {
+      const category = notification.category ?? "announcements"
+      acc[category].push(notification)
+      return acc
+    },
+    {
+      examUpdates: [] as ChildNotification[],
+      homeworkAlerts: [] as ChildNotification[],
+      announcements: [] as ChildNotification[],
+    },
+  )
+}
+
+function buildAlertItemsFromNotifications(rows: ChildNotification[]) {
+  const maxAlerts = 3
+  return rows.slice(0, maxAlerts).map((notification) => {
+    const time = formatNotificationTime(
+      notification.timestamp ?? notification.metadata?.classTiming ?? undefined,
+    )
+    return {
+      title: notification.title,
+      detail: notification.detail,
+      time: time || "Just now",
+    }
+  })
 }
 
 export type ChildData = {
@@ -485,6 +592,7 @@ const ParentDashboardContext = createContext<
       children: { id: string; name: string; grade: string; remarks: string }[]
       childData: ChildData
       parentProfile: ParentProfile | null
+      hasLinkedChildren: boolean
     }
   | undefined
 >(undefined)
@@ -509,6 +617,9 @@ export function ParentDashboardProvider({ children }: { children: ReactNode }) {
   })
   const [parentChildren, setParentChildren] = useState<ParentChildProfile[]>([])
   const [parentProfile, setParentProfile] = useState<ParentProfile | null>(null)
+  const [parentNotificationsByChild, setParentNotificationsByChild] = useState<
+    Record<string, StudentNotificationRow[]>
+  >({})
   const childOptions = useMemo(
     () =>
       parentChildren.length > 0
@@ -516,13 +627,30 @@ export function ParentDashboardProvider({ children }: { children: ReactNode }) {
         : demoChildOptions,
     [parentChildren, demoChildOptions],
   )
+  const cachedNotificationsForSelectedChild =
+    parentNotificationsByChild[selectedChildId]
   const childData = useMemo(() => {
     const template = childPortfolio.find((item) => item.id === selectedChildId) ?? childPortfolio[0]
     const matchingChild = parentChildren.find(
       (child) => normalizeChildId(child.id) === selectedChildId,
     )
+    const normalizedNotifications = normalizeParentNotifications(
+      cachedNotificationsForSelectedChild ?? [],
+    )
+    const hasLiveNotifications = normalizedNotifications.length > 0
+    const finalNotifications = hasLiveNotifications
+      ? categorizeParentNotifications(normalizedNotifications)
+      : template.notifications
+    const finalAlerts = hasLiveNotifications
+      ? buildAlertItemsFromNotifications(normalizedNotifications)
+      : template.alerts
+
     if (!matchingChild) {
-      return template
+      return {
+        ...template,
+        alerts: finalAlerts,
+        notifications: finalNotifications,
+      }
     }
     const classInfo = matchingChild.class_details
     const templateSubjectDetails = template.subjectDetails
@@ -571,8 +699,10 @@ export function ParentDashboardProvider({ children }: { children: ReactNode }) {
         template.todaySubjects,
       ),
       subjectDetails: mergedSubjectDetails,
+      alerts: finalAlerts,
+      notifications: finalNotifications,
     }
-  }, [selectedChildId, parentChildren])
+  }, [selectedChildId, parentChildren, cachedNotificationsForSelectedChild])
 
   const hasSyncedSelection = useRef(false)
 
@@ -680,6 +810,50 @@ export function ParentDashboardProvider({ children }: { children: ReactNode }) {
     return () => controller.abort()
   }, [])
 
+  useEffect(() => {
+    if (!selectedChildId || parentChildren.length === 0 || cachedNotificationsForSelectedChild) return
+
+    const controller = new AbortController()
+    const params = new URLSearchParams({
+      child_id: selectedChildId,
+      limit: "50",
+    })
+
+    const loadNotifications = async () => {
+      try {
+        const res = await fetch(`/api/parent/notifications?${params.toString()}`, {
+          cache: "no-store",
+          signal: controller.signal,
+        })
+        if (!res.ok) {
+          const text = await res.text().catch(() => res.statusText)
+          if (res.status === 403 || res.status === 400) {
+            console.warn("Parent notifications skip: validation failed", text || res.statusText)
+            return
+          }
+          throw new Error(text || "Unable to load notifications")
+        }
+        const payload = await res.json()
+        const notifications = Array.isArray(payload?.notifications)
+          ? payload.notifications
+          : []
+        if (!controller.signal.aborted) {
+          setParentNotificationsByChild((prev) => ({
+            ...prev,
+            [selectedChildId]: notifications,
+          }))
+        }
+      } catch (error: unknown) {
+        if ((error as any)?.name !== "AbortError") {
+          console.error("Failed to load parent notifications:", error)
+        }
+      }
+    }
+
+    loadNotifications()
+    return () => controller.abort()
+  }, [selectedChildId, cachedNotificationsForSelectedChild, parentChildren.length])
+
   return (
     <ParentDashboardContext.Provider
       value={{
@@ -688,6 +862,7 @@ export function ParentDashboardProvider({ children }: { children: ReactNode }) {
         children: childOptions,
         childData,
         parentProfile,
+        hasLinkedChildren: parentChildren.length > 0,
       }}
     >
       {children}

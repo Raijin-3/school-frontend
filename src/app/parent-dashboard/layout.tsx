@@ -9,7 +9,7 @@ export default function ParentDashboardLayout({ children }: { children: ReactNod
   return (
     <ParentDashboardProvider>
       <div className="bg-slate-50">
-        <div className="mx-auto max-w-6xl px-4 py-4">
+        <div className="mx-auto max-w-7xl px-4 py-4">
           <ChildSwitcher />
         </div>
       </div>

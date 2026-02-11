@@ -57,36 +57,54 @@ export type ModuleSectionAttempt = {
 }
 
 export type SectionScoreSummary = {
-  totalQuestions: number
+  totalAttempted: number
   totalCorrect: number
   scorePercent: number | null
   strength: string
+  strengthTone: string
 }
 
 export function deriveSectionScoreSummary(section: ModuleSectionAttempt): SectionScoreSummary {
   const adaptiveSessions = section.adaptiveSessions ?? []
-  const adaptiveTotalQuestions = adaptiveSessions.reduce((sum, session) => sum + (session.questionCount ?? 0), 0)
-  const adaptiveCorrectAnswers = adaptiveSessions.reduce((sum, session) => sum + (session.correctAnswers ?? 0), 0)
+  const adaptiveAttemptedQuestions = adaptiveSessions.reduce(
+    (sum, session) => sum + (session.answeredQuestions ?? 0),
+    0,
+  )
+  const adaptiveCorrectAnswers = adaptiveSessions.reduce(
+    (sum, session) => sum + (session.correctAnswers ?? 0),
+    0,
+  )
   const practiceExercises = section.practiceExercises ?? []
-  const practiceTotalQuestions = practiceExercises.reduce((sum, exercise) => sum + (exercise.questionCount ?? 0), 0)
-  const practiceCorrectAnswers = practiceExercises.reduce((sum, exercise) => sum + (exercise.correctQuestionCount ?? 0), 0)
+  const practiceAttemptedQuestions = practiceExercises.reduce(
+    (sum, exercise) => sum + (exercise.attemptedQuestions ?? 0),
+    0,
+  )
+  const practiceCorrectAnswers = practiceExercises.reduce(
+    (sum, exercise) => sum + (exercise.correctQuestionCount ?? 0),
+    0,
+  )
 
-  const totalQuestions = adaptiveTotalQuestions + practiceTotalQuestions
+  const totalAttempted = adaptiveAttemptedQuestions + practiceAttemptedQuestions
   const totalCorrect = adaptiveCorrectAnswers + practiceCorrectAnswers
-  const scorePercent = totalQuestions > 0 ? Math.round((totalCorrect / totalQuestions) * 100) : null
+  const scorePercent = totalAttempted > 0 ? Math.round((totalCorrect / totalAttempted) * 100) : null
 
   let strength: string
+  let strengthTone = "text-slate-500"
   if (scorePercent === null) {
     strength = "Not started yet"
-  } else if (scorePercent >= 85) {
-    strength = "Mastered this section"
-  } else if (scorePercent >= 70) {
+    strengthTone = "text-slate-500"
+  } else if (scorePercent >= 80) {
     strength = "Growing strength"
+    strengthTone = "text-emerald-600"
+  } else if (scorePercent >= 51) {
+    strength = "Average"
+    strengthTone = "text-amber-600"
   } else {
     strength = "Needs more practice"
+    strengthTone = "text-rose-600"
   }
 
-  return { totalQuestions, totalCorrect, scorePercent, strength }
+  return { totalAttempted, totalCorrect, scorePercent, strength, strengthTone }
 }
 
 export function getPracticeExerciseScorePercent(

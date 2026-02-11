@@ -3017,4 +3017,3 @@ export default async function ClassInsightPage({
 
 
 
-

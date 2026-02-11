@@ -4,6 +4,17 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { useRouter } from "next/navigation"
 import { Sparkles, TrendingUp, X } from "lucide-react"
 import { toast } from "@/lib/toast"
+
+import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
 import type {
   AiHighlight,
   AiUsageSegment,
@@ -297,6 +308,19 @@ const formatReadyTimestamp = (value?: string) => {
   })
 }
 
+const formatScheduledDateTime = (value?: string) => {
+  if (!value) return ""
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ""
+  return date.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  })
+}
+
 const assignmentBadgeClasses = {
   assigned: "rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.3 text-[9px] font-semibold uppercase tracking-[0.1em] text-emerald-600",
   notAssigned:
@@ -539,6 +563,9 @@ export default function ClassInsightShell(props: Props) {
     null
   const [sectionActionLoading, setSectionActionLoading] = useState<Record<string, boolean>>({})
   const [selectedBucketIds, setSelectedBucketIds] = useState<Record<string, string | null>>({})
+  const [timingDialogContext, setTimingDialogContext] = useState<TimingDialogContext | null>(null)
+  const [timingDialogValue, setTimingDialogValue] = useState("")
+  const [isTimingDialogOpen, setIsTimingDialogOpen] = useState(false)
   const focusGroupSectionBuckets = useMemo(() => {
     return focusGroupsSource.reduce<Record<string, SectionBucket[]>>((acc, group) => {
       const rows = group.tableRows ?? []
@@ -869,6 +896,41 @@ export default function ClassInsightShell(props: Props) {
     [],
   )
 
+    const handleTimingDialogOpenChange = (open: boolean) => {
+    setIsTimingDialogOpen(open)
+    if (!open) {
+      setTimingDialogContext(null)
+      setTimingDialogValue("")
+    }
+  }
+
+  const handleTimingDialogSubmit = () => {
+    if (!timingDialogContext) {
+      handleTimingDialogOpenChange(false)
+      return
+    }
+    if (!timingDialogValue) {
+      toast.info("Class timing is required to send this notification.")
+      return
+    }
+    const parsedTiming = new Date(timingDialogValue)
+    if (Number.isNaN(parsedTiming.getTime())) {
+      toast.info("Pick a valid date and time for the extra class.")
+      return
+    }
+    const friendlyTiming = formatScheduledDateTime(timingDialogValue) || timingDialogValue
+    const context = { classTiming: friendlyTiming }
+    void handleSectionAction(
+      timingDialogContext.groupTitle,
+      timingDialogContext.bucket,
+      timingDialogContext.action.label,
+      timingDialogContext.action.buildMessage(timingDialogContext.bucket.sectionTitle, context),
+      timingDialogContext.action.needsRevisionNotes,
+      friendlyTiming,
+    )
+    handleTimingDialogOpenChange(false)
+  }
+
   const renderFocusGroupSectionPanel = (
     group: FocusGroup,
     options?: { id?: string },
@@ -987,6 +1049,16 @@ export default function ClassInsightShell(props: Props) {
             disabled={reminderDisabled || isLoading}
             onClick={async () => {
               if (!effectiveBucket) return
+              if (action.requiresTiming && group.title === "Stuck Students") {
+                setTimingDialogContext({
+                  action,
+                  groupTitle: group.title,
+                  bucket: effectiveBucket,
+                })
+                setTimingDialogValue("")
+                setIsTimingDialogOpen(true)
+                return
+              }
               let classTiming: string | undefined
               if (action.requiresTiming) {
                 const timingResponse =
@@ -1019,7 +1091,7 @@ export default function ClassInsightShell(props: Props) {
             }`}
           >
             {isLoading ? "Sending..." : action.label}
-          </button>          
+          </button>         
           <hr></hr>
         </div>
       )
@@ -1145,7 +1217,7 @@ export default function ClassInsightShell(props: Props) {
           {group.title === "Ready for Extension" ? null : sectionBuckets.length ? (
             group.title === "Stuck Students" ? (
               <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
-                <div className="space-y-3">{bucketCards}</div>
+                <div className="space-y-3" style={{ heigh: "500px", overflowY: "scroll" }}>{bucketCards}</div>
                 <div className="space-y-3">
                   <div className="rounded-2xl border border-slate-200/80 bg-white/80 p-4 shadow-sm">
                     <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500"><b>AI Suggestion</b></p>
@@ -2881,6 +2953,55 @@ export default function ClassInsightShell(props: Props) {
           </aside>
         </>
       )}
+      <Dialog open={isTimingDialogOpen} onOpenChange={handleTimingDialogOpenChange}>
+        <DialogContent className="space-y-4">
+          <DialogHeader className="text-left gap-1">
+            <DialogTitle>
+              Schedule extra class
+              {timingDialogContext?.bucket.sectionTitle ? `: ${timingDialogContext.bucket.sectionTitle}` : ""}
+            </DialogTitle>
+            <DialogDescription>
+              {timingDialogContext
+                ? `Choose when the extra class for ${timingDialogContext.bucket.sectionTitle} will happen.`
+                : "Pick the date and time for the extra class so students know when to join."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <label className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+              Date & time
+            </label>
+            <Input
+              type="datetime-local"
+              value={timingDialogValue}
+              onChange={(event) => setTimingDialogValue(event.target.value)}
+              className="text-sm"
+            />
+            <p className="text-[11px] text-slate-500">Times show in your local timezone.</p>
+            {timingDialogValue && (
+              <p className="text-[11px] text-slate-600">
+                Selected: {formatScheduledDateTime(timingDialogValue)}
+              </p>
+            )}
+          </div>
+          <DialogFooter className="gap-2">
+            <button
+              type="button"
+              onClick={() => handleTimingDialogOpenChange(false)}
+              className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500"
+            >
+              Cancel
+            </button>
+            <Button
+              onClick={handleTimingDialogSubmit}
+              disabled={!timingDialogValue}
+              className="uppercase tracking-[0.3em]"
+            >
+              Send extra class notice
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
     </div>
   )
 }
