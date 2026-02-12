@@ -56,9 +56,13 @@ export type LecturePlanningContext = {
 
 type LecturePlanningFormProps = {
   onContextChange?: (context: LecturePlanningContext | null) => void
+  onPlanSaved?: () => void
 }
 
-export function LecturePlanningForm({ onContextChange }: LecturePlanningFormProps = {}) {
+export function LecturePlanningForm({
+  onContextChange,
+  onPlanSaved,
+}: LecturePlanningFormProps = {}) {
   const [classes, setClasses] = useState<ClassRow[]>([])
   const [subjects, setSubjects] = useState<SubjectRow[]>([])
   const [modules, setModules] = useState<ModuleRow[]>([])
@@ -72,6 +76,7 @@ export function LecturePlanningForm({ onContextChange }: LecturePlanningFormProp
   const [strugglingConcepts, setStrugglingConcepts] = useState("")
   const [timeAvailableMinutes, setTimeAvailableMinutes] = useState("40")
   const [topicHierarchy, setTopicHierarchy] = useState("")
+  const [keyConcepts, setKeyConcepts] = useState("")
   const [isLoadingHierarchy, setIsLoadingHierarchy] = useState(false)
 
   const [isLoadingClasses, setIsLoadingClasses] = useState(false)
@@ -224,6 +229,7 @@ export function LecturePlanningForm({ onContextChange }: LecturePlanningFormProp
   useEffect(() => {
     if (!sectionId) {
       setTopicHierarchy("")
+      setKeyConcepts("")
       setIsLoadingHierarchy(false)
       return
     }
@@ -247,6 +253,7 @@ export function LecturePlanningForm({ onContextChange }: LecturePlanningFormProp
         }
         if (!isActive) return
         setTopicHierarchy(data?.hierarchy ?? "")
+        setKeyConcepts(data?.key_concepts ?? "")
       } catch (error) {
         if (controller.signal.aborted) return
         const message =
@@ -308,7 +315,7 @@ export function LecturePlanningForm({ onContextChange }: LecturePlanningFormProp
         module_id: moduleId,
         section_id: sectionId,
         struggling_concepts: strugglingConcepts.trim(),
-        topic_hierarchy_covered_so_far: topicHierarchy.trim() || null,
+        topic_hierarchy_covered_so_far: keyConcepts.trim() || null,
         time_available_minutes: parsedMinutes,
       }
 
@@ -325,7 +332,8 @@ export function LecturePlanningForm({ onContextChange }: LecturePlanningFormProp
 
       const data = await response.json()
       console.info("Lecture planning AI response", data.lesson_plan ?? data.ai_response)
-      toast.success("AI lesson plan saved. Check the planning dashboard for details.")
+      toast.success("The AI-generated lesson plan is now ready. Kindly review the updated plan below.")
+      onPlanSaved?.()
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Unable to save planning snapshot"
@@ -371,7 +379,7 @@ export function LecturePlanningForm({ onContextChange }: LecturePlanningFormProp
         {/* <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-900 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-slate-100">
           Lecture Planning
         </div> */}
-        <h2 className="text-2xl font-semibold text-slate-900">Capture the next lecture</h2>
+        <h2 className="text-2xl font-semibold text-slate-900">Teacher co-pilot</h2>
         <p className="text-sm text-slate-600">
           Pick the class, subject, module, and section you want to focus on. Document the
           what your students are struggling with and how far the topic hierarchy has progressed.
@@ -392,6 +400,7 @@ export function LecturePlanningForm({ onContextChange }: LecturePlanningFormProp
               setModules([])
               setSections([])
               setTopicHierarchy("")
+              setKeyConcepts("")
             }}
             disabled={isLoadingClasses}
           >
@@ -420,6 +429,7 @@ export function LecturePlanningForm({ onContextChange }: LecturePlanningFormProp
               setSections([])
               setModules([])
               setTopicHierarchy("")
+              setKeyConcepts("")
             }}
             disabled={!classId || isLoadingSubjects}
           >
@@ -441,13 +451,14 @@ export function LecturePlanningForm({ onContextChange }: LecturePlanningFormProp
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <div className="space-y-2">
             <Label className="text-sm font-semibold text-slate-700">Subject module</Label>
-          <Select
+            <Select
             value={moduleId}
             onValueChange={(value) => {
               setModuleId(value)
               setSectionId("")
               setSections([])
               setTopicHierarchy("")
+              setKeyConcepts("")
             }}
             disabled={!subjectId || isLoadingModules}
           >
@@ -486,6 +497,27 @@ export function LecturePlanningForm({ onContextChange }: LecturePlanningFormProp
             <p className="text-xs text-slate-500">{sectionHelper}</p>
           </div>
         </div>
+
+        {sectionId && (
+          <div className="space-y-2">
+            <Label className="text-sm font-semibold text-slate-700">
+              Key concepts (Seperated by semicolon)
+            </Label>
+            <Textarea
+              value={keyConcepts}
+              onChange={(event) => setKeyConcepts(event.target.value)}
+              placeholder={
+                isLoadingHierarchy
+                  ? "Loading key concepts for this section…"
+                  : "E.g., Place value, Comparing numbers, Rounding"
+              }
+              rows={2}
+            />
+            <p className="text-xs text-slate-500">
+              Pulled from section topics. Adjust if you want to emphasize specific concepts.
+            </p>
+          </div>
+        )}
 
         <div className="space-y-2">
           <Label className="text-sm font-semibold text-slate-700">
@@ -527,7 +559,17 @@ export function LecturePlanningForm({ onContextChange }: LecturePlanningFormProp
             disabled={!isFormValid || isSaving}
             className="h-11 rounded-xl bg-slate-900 px-6 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
           >
-            {isSaving ? "Saving…" : "Save planning snapshot"}
+            <span className="inline-flex items-center gap-2">
+              {isSaving && (
+                <span
+                  className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white"
+                  aria-hidden="true"
+                />
+              )}
+              {isSaving
+                ? "AI is generating a lecture plan. Please wait…"
+                : "Save planning snapshot"}
+            </span>
           </Button>
         </div>
       </div>

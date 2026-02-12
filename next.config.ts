@@ -17,13 +17,21 @@ const nextConfig: NextConfig = {
   transpilePackages: supabasePackagesToTranspile,
   async rewrites() {
     const target = process.env.API_URL;
+    const aiTarget = process.env.JARVIS_AI_URL;
+
     if (!target || target.startsWith('/')) {
-      return [];
+      return aiTarget
+        ? [
+            {
+              source: '/revision-notes',
+              destination: `${aiTarget.replace(/\/$/, '')}/revision-notes`,
+            },
+          ]
+        : [];
     }
 
     const destination = target.replace(/\/$/, '');
-
-    return [
+    const baseRewrites = [
       {
         source: '/v1/:path*',
         destination: `${destination}/v1/:path*`,
@@ -33,14 +41,19 @@ const nextConfig: NextConfig = {
         destination: `${destination}/:path*`,
       },
       {
-        source: '/revision-notes',
-        destination: `${destination}/revision-notes`,
-      },
-      {
         source: '/lecture-planning',
         destination: `${destination}/lecture-planning`,
       },
     ];
+
+    if (aiTarget) {
+      baseRewrites.push({
+        source: '/revision-notes',
+        destination: `${aiTarget.replace(/\/$/, '')}/revision-notes`,
+      });
+    }
+
+    return baseRewrites;
   },
   typescript: {
     // !! WARN !!
