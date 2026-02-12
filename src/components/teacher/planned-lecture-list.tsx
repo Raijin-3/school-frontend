@@ -22,6 +22,7 @@ type LecturePlanItem = {
 
 type PlannedLectureListProps = {
   context: LecturePlanningContext | null
+  refreshToken?: number
 }
 
 const PLAN_MARKDOWN_COMPONENTS: Components = {
@@ -72,7 +73,10 @@ const PLAN_MARKDOWN_COMPONENTS: Components = {
   ),
 }
 
-export function PlannedLectureList({ context }: PlannedLectureListProps) {
+export function PlannedLectureList({
+  context,
+  refreshToken,
+}: PlannedLectureListProps) {
   const [plans, setPlans] = useState<LecturePlanItem[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -127,6 +131,7 @@ export function PlannedLectureList({ context }: PlannedLectureListProps) {
         const ids = Array.isArray(data?.plans) ? data.plans : []
         if (ids.length) {
           setSelectedPlanId((prev) => {
+            if (refreshToken) return ids[0].id
             return prev && ids.some((plan) => plan.id === prev)
               ? prev
               : ids[0].id
@@ -148,13 +153,12 @@ export function PlannedLectureList({ context }: PlannedLectureListProps) {
     return () => {
       controller.abort()
     }
-  }, [context, queryKey])
+  }, [context, queryKey, refreshToken])
 
   if (!context) {
     return (
       <div className="rounded-2xl border border-dashed border-slate-200/80 bg-slate-50/70 p-6 text-sm text-slate-500">
-        Select a class, subject, module, and section in the Plan Lecture tab to
-        see existing plans tied to that context.
+        Select a class, subject, module, and section above to unlock the planned lectures view.
       </div>
     )
   }
@@ -184,6 +188,8 @@ export function PlannedLectureList({ context }: PlannedLectureListProps) {
   }
 
   const filteredPlan = selectedPlan
+  const latestPlanId = plans[0]?.id
+  const isLatestPlan = filteredPlan?.id === latestPlanId
   const timestamp = filteredPlan
     ? new Date(filteredPlan.created_at).toLocaleString('en-US', {
         month: 'short',
@@ -204,41 +210,55 @@ export function PlannedLectureList({ context }: PlannedLectureListProps) {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-2 rounded-2xl border border-slate-200 bg-slate-50/70 p-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <p className="text-xs uppercase tracking-wide text-slate-500">
-            {timestamp}
-          </p>
-          <p className="text-sm text-slate-700">
-            Showing plan for <span className="font-semibold">{moduleLabel}</span>{" "}
-            / <span className="font-semibold">{sectionLabel}</span>
-          </p>
+      <div className="rounded-2xl border border-emerald-200/70 bg-gradient-to-br from-emerald-50 via-white to-slate-50 p-5 shadow-sm">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="space-y-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+                Planned lectures
+              </p>
+              {isLatestPlan && (
+                <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
+                  Latest
+                </span>
+              )}
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
+                {plans.length} saved
+              </span>
+            </div>
+            <h3 className="text-lg font-semibold text-slate-900">
+              {moduleLabel} • {sectionLabel}
+            </h3>
+            <p className="text-xs uppercase tracking-wide text-slate-500">
+              {timestamp}
+            </p>
+          </div>
+          <label className="flex flex-col text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Selected plan
+            <select
+              value={selectedPlan?.id ?? ""}
+              onChange={(event) => {
+                setSelectedPlanId(event.target.value)
+                setPlanDetailsOpen(true)
+              }}
+              className="mt-1 h-10 rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-700 shadow-sm focus:border-slate-400 focus:outline-none"
+            >
+              {plans.map((plan, index) => {
+                const label = new Date(plan.created_at).toLocaleString("en-US", {
+                  month: "short",
+                  day: "numeric",
+                  hour: "numeric",
+                  minute: "2-digit",
+                })
+                return (
+                  <option key={plan.id} value={plan.id}>
+                    {`Plan ${index + 1} - ${label}`}
+                  </option>
+                )
+              })}
+            </select>
+          </label>
         </div>
-        <label className="flex flex-col text-xs font-semibold uppercase tracking-wide text-slate-500">
-          Selected plan
-          <select
-            value={selectedPlan?.id ?? ""}
-            onChange={(event) => {
-              setSelectedPlanId(event.target.value)
-              setPlanDetailsOpen(true)
-            }}
-            className="mt-1 h-9 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-700 shadow-sm focus:border-slate-400 focus:outline-none"
-          >
-            {plans.map((plan, index) => {
-              const label = new Date(plan.created_at).toLocaleString("en-US", {
-                month: "short",
-                day: "numeric",
-                hour: "numeric",
-                minute: "2-digit",
-              })
-              return (
-                <option key={plan.id} value={plan.id}>
-                  {`Plan ${index + 1} - ${label}`}
-                </option>
-              )
-            })}
-          </select>
-        </label>
       </div>
 
       <details

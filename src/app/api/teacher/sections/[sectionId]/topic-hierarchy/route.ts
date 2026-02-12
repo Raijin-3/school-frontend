@@ -30,16 +30,21 @@ export async function GET(
       .map((row) => row.topic_hierarchy?.trim())
       .filter(Boolean)
       .join(" | ")
-    if (hierarchy) {
-      return NextResponse.json({ hierarchy })
-    }
-
-    const fallback = (data ?? [])
+    const keyConceptsList = (data ?? [])
       .map((row) => row.topic_name?.trim())
       .filter(Boolean)
-      .join(" | ")
+    const keyConcepts = keyConceptsList.join(", ")
 
-    return NextResponse.json({ hierarchy: fallback || null })
+    if (hierarchy) {
+      return NextResponse.json({ hierarchy, key_concepts: keyConcepts })
+    }
+
+    const fallback = keyConceptsList.join(" | ")
+
+    return NextResponse.json({
+      hierarchy: fallback || null,
+      key_concepts: keyConcepts,
+    })
   } catch (error) {
     console.error("Failed to load section topic hierarchy", error)
     const message =

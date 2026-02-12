@@ -7,7 +7,7 @@ export const metadata = { title: "Teacher | Jarvis" }
 
 const cards = [
   {
-    title: "Lecture Planning",
+    title: "Teacher co-pilot",
     description: "Plan lessons, outlines, and lecture flows.",
     href: "/teacher/lecture-planning",
     icon: "book",

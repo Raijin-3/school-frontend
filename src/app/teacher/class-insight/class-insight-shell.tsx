@@ -2,7 +2,16 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
-import { Sparkles, TrendingUp, X } from "lucide-react"
+import {
+  Calendar,
+  ChevronDown,
+  ChevronRight,
+  ClipboardList,
+  FileText,
+  Sparkles,
+  TrendingUp,
+  X,
+} from "lucide-react"
 import { toast } from "@/lib/toast"
 
 import { Button } from "@/components/ui/button"
@@ -250,6 +259,29 @@ const getScoreTone = (score: number | null | undefined): ScoreTone => {
   return "weak"
 }
 
+type RiskTone = "critical" | "atRisk" | "stable" | "unknown"
+
+const getRiskTone = (score: number | null | undefined): RiskTone => {
+  if (score === null || score === undefined) return "unknown"
+  if (score < 50) return "critical"
+  if (score < 70) return "atRisk"
+  return "stable"
+}
+
+const riskBadgeClasses: Record<RiskTone, string> = {
+  critical: "border-rose-200 bg-rose-50 text-rose-600",
+  atRisk: "border-amber-200 bg-amber-50 text-amber-600",
+  stable: "border-emerald-200 bg-emerald-50 text-emerald-600",
+  unknown: "border-slate-200 bg-slate-50 text-slate-500",
+}
+
+const getStudentStatusLabel = (score: number | null | undefined, lastAction?: string | null) => {
+  if (score === null || score === undefined) return "At Risk"
+  if (score >= 70) return "Stable"
+  if (score >= 50) return lastAction ? "Improving" : "At Risk"
+  return lastAction ? "Improving" : "Critical"
+}
+
 const studentToneBorderClasses: Record<ScoreTone, string> = {
   strong: "border-emerald-300",
   average: "border-amber-300",
@@ -306,6 +338,16 @@ const formatReadyTimestamp = (value?: string) => {
     minute: "2-digit",
     second: "2-digit",
   })
+}
+
+const getLatestTimestamp = (values: Array<string | null | undefined>) => {
+  const validDates = values
+    .filter(Boolean)
+    .map((value) => new Date(value as string))
+    .filter((date) => !Number.isNaN(date.getTime()))
+  if (!validDates.length) return ""
+  validDates.sort((a, b) => b.getTime() - a.getTime())
+  return formatReadyTimestamp(validDates[0].toISOString())
 }
 
 const formatScheduledDateTime = (value?: string) => {
@@ -563,6 +605,12 @@ export default function ClassInsightShell(props: Props) {
     null
   const [sectionActionLoading, setSectionActionLoading] = useState<Record<string, boolean>>({})
   const [selectedBucketIds, setSelectedBucketIds] = useState<Record<string, string | null>>({})
+  const [selectedStudentKeysByGroup, setSelectedStudentKeysByGroup] = useState<Record<string, string[]>>(
+    {},
+  )
+  const [expandedBucketIdsByGroup, setExpandedBucketIdsByGroup] = useState<
+    Record<string, Record<string, boolean>>
+  >({})
   const [timingDialogContext, setTimingDialogContext] = useState<TimingDialogContext | null>(null)
   const [timingDialogValue, setTimingDialogValue] = useState("")
   const [isTimingDialogOpen, setIsTimingDialogOpen] = useState(false)
@@ -820,7 +868,33 @@ export default function ClassInsightShell(props: Props) {
   }, [selectedClassId, focusGroupSectionBuckets, fetchSectionHistory])
 
   const handleBucketSelect = useCallback((groupTitle: string, bucketId: string) => {
-    setSelectedBucketIds((prev) => ({ ...prev, [groupTitle]: bucketId }))
+    setSelectedBucketIds((prev) => {
+      const current = prev[groupTitle]
+      const nextValue = current === bucketId ? null : bucketId
+      return { ...prev, [groupTitle]: nextValue }
+    })
+    setSelectedStudentKeysByGroup((prev) => ({ ...prev, [groupTitle]: [] }))
+  }, [])
+
+  const handleStudentToggle = useCallback((groupTitle: string, studentKey: string) => {
+    setSelectedStudentKeysByGroup((prev) => {
+      const current = new Set(prev[groupTitle] ?? [])
+      if (current.has(studentKey)) {
+        current.delete(studentKey)
+      } else {
+        current.add(studentKey)
+      }
+      return { ...prev, [groupTitle]: Array.from(current) }
+    })
+    setSelectedBucketIds((prev) => ({ ...prev, [groupTitle]: null }))
+  }, [])
+
+  const toggleBucketExpanded = useCallback((groupTitle: string, bucketId: string) => {
+    setExpandedBucketIdsByGroup((prev) => {
+      const groupState = { ...(prev[groupTitle] ?? {}) }
+      groupState[bucketId] = !groupState[bucketId]
+      return { ...prev, [groupTitle]: groupState }
+    })
   }, [])
 
   const handleSectionAction = useCallback(
@@ -831,6 +905,7 @@ export default function ClassInsightShell(props: Props) {
       actionMessage: string,
       needsRevisionNotes?: boolean,
       classTiming?: string,
+      suppressToast?: boolean,
     ) => {
       const actionKey = `${groupTitle}-${bucket.id}-${actionLabel}`
       setSectionActionLoading((prev) => ({ ...prev, [actionKey]: true }))
@@ -880,12 +955,16 @@ export default function ClassInsightShell(props: Props) {
           const previous = prev[bucket.id] ?? []
           return { ...prev, [bucket.id]: [...previous, entry] }
         })
-        toast.success(successMessage)
+        if (!suppressToast) {
+          toast.success(successMessage)
+        }
+        return true
       } catch (error) {
         console.error("Focus group action error:", error)
         const message =
           error instanceof Error ? error.message : "Failed to send notification; try again."
         toast.error(message)
+        return false
       } finally {
         setSectionActionLoading((prev) => {
           const { [actionKey]: _, ...rest } = prev
@@ -941,11 +1020,41 @@ export default function ClassInsightShell(props: Props) {
     ).length
     const totalEntries = group.tableRows?.length ?? 0
     const selectedBucketIdForGroup =
-      selectedBucketIds[group.title] ?? sectionBuckets[0]?.id ?? null
+      selectedBucketIds[group.title] ??
+      (group.title === "Stuck Students" ? null : sectionBuckets[0]?.id ?? null)
     const targetBucket =
-      sectionBuckets.find((bucket) => bucket.id === selectedBucketIdForGroup) ??
-      sectionBuckets[0] ??
-      null
+      selectedBucketIdForGroup
+        ? sectionBuckets.find((bucket) => bucket.id === selectedBucketIdForGroup) ?? null
+        : group.title === "Stuck Students"
+        ? null
+        : sectionBuckets[0] ?? null
+    const selectedStudentKeys = selectedStudentKeysByGroup[group.title] ?? []
+    const selectedStudentKeySet = new Set(selectedStudentKeys)
+    const selectedStudentRows = selectedStudentKeys.length
+      ? sectionBuckets.flatMap((bucket) =>
+          bucket.students.filter((row) =>
+            selectedStudentKeySet.has(`${row.student_id ?? row.student_name}-${row.section_id ?? row.section_title ?? "section"}`),
+          ),
+        )
+      : []
+    const selectedStudentBucket: SectionBucket | null = selectedStudentRows.length
+      ? {
+          id: `selected-${group.title}`,
+          sectionTitle:
+            selectedStudentRows.length === 1
+              ? selectedStudentRows[0].student_name ?? "Selected student"
+              : "Selected students",
+          students: selectedStudentRows,
+          hintsTotal: selectedStudentRows.reduce((sum, row) => sum + (row.hints ?? 0), 0),
+          averageScore: (() => {
+            const scores = selectedStudentRows
+              .map((row) => row.section_score)
+              .filter((value): value is number => typeof value === "number")
+            if (!scores.length) return null
+            return Math.round(scores.reduce((sum, value) => sum + value, 0) / scores.length)
+          })(),
+        }
+      : null
 
     const meta = (() => {
       switch (group.title) {
@@ -988,7 +1097,7 @@ export default function ClassInsightShell(props: Props) {
     })()
     const reminderSections =
       group.title === "Incomplete Objectives"
-        ? groupSectionRows(inProgressStudentSections)
+        ? groupSectionRows(resolvedInProgressRows)
         : []
     const inProgressSections =
       group.title === "Incomplete Objectives"
@@ -1024,20 +1133,32 @@ export default function ClassInsightShell(props: Props) {
         ? buildAggregateBucket(inProgressSections)
         : null
     const effectiveBucket =
-      group.title === "Incomplete Objectives" ? fallbackBucket : targetBucket ?? fallbackBucket
-    const reminderDisabled = !effectiveBucket
+      group.title === "Incomplete Objectives"
+        ? fallbackBucket
+        : group.title === "Stuck Students"
+        ? selectedStudentBucket ?? targetBucket ?? null
+        : targetBucket ?? fallbackBucket
+    const hasReminderTargets =
+      group.title === "Incomplete Objectives" ? reminderSections.length > 0 : Boolean(effectiveBucket)
+    const reminderDisabled = !hasReminderTargets
 
     const renderSectionActionControl = (
       action: FocusGroupAction,
       showDescription = false,
       wrapperClass?: string,
     ) => {
-      const bucketId = effectiveBucket?.id ?? "none"
+      const bucketId =
+        group.title === "Incomplete Objectives" ? "incomplete-objectives-all" : effectiveBucket?.id ?? "none"
       const actionKey = `${group.title}-${bucketId}-${action.label}`
       const isLoading = Boolean(sectionActionLoading[actionKey])
       const descriptionCopy =
         showDescription &&
-        (action.description ?? action.buildMessage(effectiveBucket?.sectionTitle))
+        (action.description ??
+          action.buildMessage(
+            group.title === "Incomplete Objectives"
+              ? reminderSections[0]?.sectionTitle ?? effectiveBucket?.sectionTitle
+              : effectiveBucket?.sectionTitle,
+          ))
       return (
         <div key={actionKey} className={wrapperClass ?? ""}>
           {showDescription && descriptionCopy && (
@@ -1048,6 +1169,49 @@ export default function ClassInsightShell(props: Props) {
             style={{ backgroundColor: "aquamarine", border: "none" }}
             disabled={reminderDisabled || isLoading}
             onClick={async () => {
+              const aggregateActionKey = `${group.title}-incomplete-objectives-all-${action.label}`
+              if (group.title === "Incomplete Objectives") {
+                if (!reminderSections.length) return
+                setSectionActionLoading((prev) => ({ ...prev, [aggregateActionKey]: true }))
+                const reminderStudentIds = new Set<string>()
+                reminderSections.forEach((section) => {
+                  section.students.forEach((row) => {
+                    if (row.student_id) reminderStudentIds.add(row.student_id)
+                  })
+                })
+                toast.info(
+                  `Sending reminders to ${reminderStudentIds.size} student${reminderStudentIds.size === 1 ? "" : "s"} across ${reminderSections.length} section${reminderSections.length === 1 ? "" : "s"}.`,
+                )
+                try {
+                  const results = await Promise.all(
+                    reminderSections.map((section) => {
+                      const bucket = buildBucketFromSectionGroup(section)
+                      return handleSectionAction(
+                        group.title,
+                        bucket,
+                        action.label,
+                        action.buildMessage(bucket.sectionTitle),
+                        action.needsRevisionNotes,
+                        undefined,
+                        true,
+                      )
+                    }),
+                  )
+                  if (results.every(Boolean)) {
+                    toast.success(
+                      `${action.label} notification sent to ${reminderStudentIds.size} student${reminderStudentIds.size === 1 ? "" : "s"}`,
+                    )
+                  } else {
+                    toast.info("Some reminders failed to send. Please check and try again.")
+                  }
+                } finally {
+                  setSectionActionLoading((prev) => {
+                    const { [aggregateActionKey]: _, ...rest } = prev
+                    return { ...rest, [aggregateActionKey]: false }
+                  })
+                }
+                return
+              }
               if (!effectiveBucket) return
               if (action.requiresTiming && group.title === "Stuck Students") {
                 setTimingDialogContext({
@@ -1090,10 +1254,98 @@ export default function ClassInsightShell(props: Props) {
               reminderDisabled || isLoading ? "cursor-allowed opacity-60" : ""
             }`}
           >
-            {isLoading ? "Sending..." : action.label}
+            {isLoading ? (
+              <span className="inline-flex items-center gap-2">
+                <span className="h-3 w-3 animate-spin rounded-full border-2 border-slate-400 border-t-transparent" />
+                Sending notification...
+              </span>
+            ) : (
+              action.label
+            )}
           </button>         
           <hr></hr>
         </div>
+      )
+    }
+
+    const renderSectionActionForBucket = (action: FocusGroupAction, bucket: SectionBucket) => {
+      const actionKey = `${group.title}-${bucket.id}-${action.label}`
+      const isLoading = Boolean(sectionActionLoading[actionKey])
+      const isDisabled = !bucket.students.length || isLoading
+      const actionIcon =
+        action.label === "Revision notes on weak areas."
+          ? FileText
+          : action.label === "Weakness Practice Quiz."
+          ? ClipboardList
+          : Calendar
+      const actionTone =
+        action.label === "Revision notes on weak areas."
+          ? { button: "bg-indigo-600 hover:bg-indigo-700", icon: "bg-indigo-500" }
+          : action.label === "Weakness Practice Quiz."
+          ? { button: "bg-amber-600 hover:bg-amber-700", icon: "bg-amber-500" }
+          : { button: "bg-emerald-600 hover:bg-emerald-700", icon: "bg-emerald-500" }
+      return (
+        <button
+          key={actionKey}
+          type="button"
+          disabled={isDisabled}
+          onClick={() => {
+            if (!bucket.students.length) return
+            if (action.requiresTiming && group.title === "Stuck Students") {
+              setTimingDialogContext({
+                action,
+                groupTitle: group.title,
+                bucket,
+              })
+              setTimingDialogValue("")
+              setIsTimingDialogOpen(true)
+              return
+            }
+            let classTiming: string | undefined
+            if (action.requiresTiming) {
+              const timingResponse =
+                typeof window !== "undefined"
+                  ? window.prompt(action.timingPrompt ?? "When is the extra class happening?")
+                  : null
+              if (!timingResponse) {
+                toast.info("Class timing is required to send this notification.")
+                return
+              }
+              const trimmedTiming = timingResponse.trim()
+              if (!trimmedTiming) {
+                toast.info("Class timing is required to send this notification.")
+                return
+              }
+              classTiming = trimmedTiming
+            }
+            const context = classTiming ? { classTiming } : undefined
+            void handleSectionAction(
+              group.title,
+              bucket,
+              action.label,
+              action.buildMessage(bucket.sectionTitle, context),
+              action.needsRevisionNotes,
+              classTiming,
+            )
+          }}
+          className={`group inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-white shadow-sm transition ${
+            isDisabled
+              ? "cursor-allowed bg-slate-200 text-slate-500"
+              : actionTone.button
+          }`}
+        >
+          <span
+            className={`flex h-5 w-5 items-center justify-center rounded-full ${
+              isDisabled ? "bg-slate-300 text-slate-500" : `${actionTone.icon} text-white`
+            }`}
+          >
+            {(() => {
+              const Icon = actionIcon
+              return <Icon className="h-3 w-3" />
+            })()}
+          </span>
+          {isLoading ? "Sending..." : action.label}
+        </button>
       )
     }
 
@@ -1130,12 +1382,12 @@ export default function ClassInsightShell(props: Props) {
                 row.section_score !== null && row.section_score !== undefined
                   ? `${Math.round(row.section_score)}%`
                   : "--"
-      const statusDetails =
-        row.adaptive_status || row.exercise_status
-        ? `${row.adaptive_status ?? "Adaptive status pending"} \u00b7 ${
-              row.exercise_status ?? "Exercise status pending"
-            }`
-          : null
+              const statusDetails =
+                row.adaptive_status || row.exercise_status
+                  ? `${row.adaptive_status ?? "Adaptive status pending"} · ${
+                      row.exercise_status ?? "Exercise status pending"
+                    }`
+                  : null
               return (
                 <div
                   key={`${row.student_id}-${row.section_id ?? row.section_title}`}
@@ -1193,6 +1445,129 @@ export default function ClassInsightShell(props: Props) {
       )
     })
 
+    const stuckSectionTables = sectionBuckets
+      .slice()
+      .sort((a, b) => {
+        const aScore = a.averageScore ?? 999
+        const bScore = b.averageScore ?? 999
+        return aScore - bScore
+      })
+      .map((bucket) => {
+        const isExpanded = expandedBucketIdsByGroup[group.title]?.[bucket.id] ?? true
+        const riskTone = getRiskTone(bucket.averageScore)
+        const riskLabel =
+          riskTone === "critical"
+            ? "Critical"
+            : riskTone === "atRisk"
+            ? "At Risk"
+            : riskTone === "stable"
+            ? "Stable"
+            : "At Risk"
+        const scoredStudents = bucket.students.filter(
+          (row) => typeof row.section_score === "number",
+        )
+        return (
+          <div key={bucket.id} className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => toggleBucketExpanded(group.title, bucket.id)}
+              className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50/60 px-4 py-3 transition"
+            >
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    toggleBucketExpanded(group.title, bucket.id)
+                  }}
+                  className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500"
+                >
+                  {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                </button>
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">{bucket.sectionTitle}</p>
+                  <p className="text-[11px] text-slate-500">
+                    {bucket.students.length} student{bucket.students.length === 1 ? "" : "s"} ·{" "}
+                    {bucket.averageScore !== null ? `Avg ${bucket.averageScore}%` : "Avg pending"}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.2em]">
+                <span className={`rounded-full border px-2 py-1 font-semibold ${riskBadgeClasses[riskTone]}`}>
+                  {riskLabel}
+                </span>
+              </div>
+            </div>
+            {isExpanded && (
+              <div className="border-t border-slate-200 px-4 py-3">
+                {scoredStudents.length ? (
+                  <div className="grid mt-3 mb-5 gap-2 sm:grid-cols-2 lg:grid-cols-6">
+                    {scoredStudents.map((row) => {
+                      const scoreLabel = `${Math.round(row.section_score ?? 0)}%`
+                      const scoreTone = getScoreTone(row.section_score)
+                      return (
+                        <div
+                          key={`${row.student_id}-${row.section_id ?? row.section_title}`}
+                          className="rounded-xl border border-slate-200 bg-slate-50/60 p-3"
+                        >
+                          <p className="text-sm font-semibold text-slate-900">{row.student_name}</p>
+                          <p className={`mt-1 text-xs font-semibold ${sectionScoreToneClasses[scoreTone]}`}>
+                            Mastery {scoreLabel}
+                          </p>
+                        </div>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-500">No scored students yet.</p>
+                )}
+                <div className="mt-5 mb-2 flex flex-wrap gap-2">
+                  {sectionActions.map((action) => renderSectionActionForBucket(action, bucket))}
+                </div>
+                <div className="mt-3 flex flex-col gap-2 border-t border-dashed border-slate-200 pt-3 text-xs text-slate-500">
+                  {(() => {
+                    const actions = sectionActionLog[bucket.id] ?? []
+                    if (!actions.length) {
+                      return <p>No actions taken yet.</p>
+                    }
+                    const last = actions[0]
+                    return (
+                      <div className="space-y-1">
+                        <p className="text-[11px] text-slate-500">
+                          Last action:{" "}
+                          <span className="text-[11px] font-semibold text-slate-900">{last.label}</span>
+                        </p>
+                        <p className="text-[11px] text-slate-500">
+                          Last action time:{" "}
+                          <span className="text-[11px] font-semibold text-slate-900">
+                            {formatReadyTimestamp(last.timestamp)}
+                          </span>
+                        </p>
+                      </div>
+                    )
+                  })()}
+                  <button
+                    type="button"
+                    disabled={actionHistoryLoadingFor === bucket.id}
+                    onClick={() => {
+                      setActionLogBucketId(bucket.id)
+                      const sectionId = bucket.students.map((row) => row.section_id).find(Boolean) ?? null
+                      void fetchSectionHistory(bucket.id, sectionId)
+                    }}
+                    style={{width: "20%", float: "left"}}
+                    className=" inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-900 shadow-sm disabled:cursor-allowed disabled:opacity-60"
+                  >
+                    {actionHistoryLoadingFor === bucket.id ? "Loading..." : "View action history"}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )
+      })
+
+
     return (
       <div
         {...(options?.id ? { id: options.id } : {})}
@@ -1217,17 +1592,35 @@ export default function ClassInsightShell(props: Props) {
           {group.title === "Ready for Extension" ? null : sectionBuckets.length ? (
             group.title === "Stuck Students" ? (
               <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
-                <div className="space-y-3" style={{ heigh: "500px", overflowY: "scroll" }}>{bucketCards}</div>
                 <div className="space-y-3">
-                  <div className="rounded-2xl border border-slate-200/80 bg-white/80 p-4 shadow-sm">
-                    <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500"><b>AI Suggestion</b></p>
-                    <p className="text-xs text-slate-500">
-                      Select the appropriate action to signal the next step for students in the targeted section.
+                  <p className="text-xs text-slate-500">
+                    Actions are available inside each section; use the header to expand or collapse.
+                  </p>
+                  {stuckSectionTables.length ? (
+                    <div className="space-y-3">{stuckSectionTables}</div>
+                  ) : (
+                    <p className="text-xs text-slate-500">{meta.emptyMessage}</p>
+                  )}
+                </div>
+                <div className="space-y-3">
+                  <div className="sticky top-4 rounded-2xl border border-slate-200/80 bg-white/80 p-4 shadow-sm">
+                    <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500">
+                      <b>AI Suggestion</b>
                     </p>
-                    <div className="mt-3 space-y-3">
-                      {sectionActions.map((action) =>
-                        renderSectionActionControl(action, true, "space-y-2"),
-                      )}
+                    <p className="text-xs text-slate-500">
+                      Use the action buttons inside each section to guide next steps.
+                    </p>
+                    <div className="mt-3 space-y-3 text-xs text-slate-600">
+                      {sectionActions.map((action) => (
+                        <div key={`stuck-help-${action.label}`} className="rounded-xl border border-slate-100 bg-slate-50/70 p-3">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-700">
+                            {action.label}
+                          </p>
+                          <p className="mt-1 text-[11px] text-slate-500">
+                            {action.description ?? action.buildMessage("this section")}
+                          </p>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 </div>
@@ -1480,6 +1873,8 @@ export default function ClassInsightShell(props: Props) {
             ? "Automatic reminders target the first active section."
             : group.title === "Ready for Extension"
             ? ""
+            : group.title === "Stuck Students"
+            ? "Actions are available within each section."
             : effectiveBucket
             ? `Selected section: ${effectiveBucket.sectionTitle}`
             : "Select a section to notify students at scale."}
@@ -1599,6 +1994,22 @@ export default function ClassInsightShell(props: Props) {
       notStartedStudents: Math.max(assignedStudents - attemptedStudents, 0),
     }
   }, [sectionSummaries])
+
+  useEffect(() => {
+    setExpandedBucketIdsByGroup((prev) => {
+      const next = { ...prev }
+      const buckets = focusGroupSectionBuckets["Stuck Students"] ?? []
+      if (!buckets.length) return next
+      const groupState = { ...(next["Stuck Students"] ?? {}) }
+      buckets.forEach((bucket) => {
+        if (groupState[bucket.id] === undefined) {
+          groupState[bucket.id] = true
+        }
+      })
+      next["Stuck Students"] = groupState
+      return next
+    })
+  }, [focusGroupSectionBuckets])
 
   const moduleSectionCompletionPercent = useMemo(() => {
     if (!sectionSummaries.length) return null
