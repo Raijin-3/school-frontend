@@ -113,6 +113,13 @@ export function LecturePlanningForm({
   }, [])
 
   useEffect(() => {
+    if (classId || classes.length !== 1) return
+    const onlyClass = classes[0]?.id
+    if (!onlyClass) return
+    setClassId(onlyClass)
+  }, [classes, classId])
+
+  useEffect(() => {
     if (!classId) {
       setSubjects([])
       setSubjectId("")
@@ -151,6 +158,13 @@ export function LecturePlanningForm({
       active = false
     }
   }, [classId])
+
+  useEffect(() => {
+    if (subjectId || subjects.length !== 1) return
+    const onlySubject = subjects[0]?.id
+    if (!onlySubject) return
+    setSubjectId(onlySubject)
+  }, [subjects, subjectId])
 
   useEffect(() => {
     if (!subjectId) {
@@ -501,7 +515,7 @@ export function LecturePlanningForm({
         {sectionId && (
           <div className="space-y-2">
             <Label className="text-sm font-semibold text-slate-700">
-              Key concepts (Seperated by semicolon)
+              Key concepts to be covered (Seperated by semicolon)
             </Label>
             <Textarea
               value={keyConcepts}

@@ -39,7 +39,13 @@ export type ModuleStudentSection = {
   adaptive_percent: number | null
   exercise_percent: number | null
   section_score: number | null
+  started?: boolean
   completed: boolean
+  completion_progress?: number
+  access?: {
+    adaptive: boolean
+    exercise: boolean
+  }
   exercise_hint_count?: number | null
   exercise_hints?: {
     exercise_id: string
