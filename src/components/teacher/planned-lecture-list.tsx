@@ -82,6 +82,7 @@ export function PlannedLectureList({
   const [error, setError] = useState<string | null>(null)
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null)
   const [arePlanDetailsOpen, setPlanDetailsOpen] = useState(true)
+  const [activeTab, setActiveTab] = useState<"latest" | "all">("latest")
 
   const queryKey = useMemo(
     () =>
@@ -188,16 +189,7 @@ export function PlannedLectureList({
   }
 
   const filteredPlan = selectedPlan
-  const latestPlanId = plans[0]?.id
-  const isLatestPlan = filteredPlan?.id === latestPlanId
-  const timestamp = filteredPlan
-    ? new Date(filteredPlan.created_at).toLocaleString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        hour: 'numeric',
-        minute: '2-digit',
-      })
-    : ''
+  const latestPlan = plans[0]
   const payload = filteredPlan?.input_payload ?? {}
   const moduleLabel = payload.module_title || 'Module'
   const sectionLabel = payload.subtopic_title || 'Section'
@@ -208,41 +200,148 @@ export function PlannedLectureList({
     filteredPlan?.raw_ai_response?.trim() ||
     ''
 
+  const latestPayload = latestPlan?.input_payload ?? {}
+  const latestModuleLabel = latestPayload.module_title || 'Module'
+  const latestSectionLabel = latestPayload.subtopic_title || 'Section'
+  const latestMinutes = latestPayload.time_available_minutes ?? 40
+  const latestStruggles = latestPayload.struggling_concepts
+  const latestTimestamp = latestPlan
+    ? new Date(latestPlan.created_at).toLocaleString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+      })
+    : ''
+
+  const activePayload =
+    activeTab === "latest" ? latestPayload : payload
+  const activeModuleLabel =
+    activeTab === "latest" ? latestModuleLabel : moduleLabel
+  const activeSectionLabel =
+    activeTab === "latest" ? latestSectionLabel : sectionLabel
+  const activeMinutes =
+    activeTab === "latest" ? latestMinutes : minutes
+  const activeStruggles =
+    activeTab === "latest" ? latestStruggles : struggles
+  const activePlanText =
+    activeTab === "latest"
+      ? latestPlan?.ai_response?.trim() ||
+        latestPlan?.raw_ai_response?.trim() ||
+        ""
+      : planText
+
   return (
     <div className="space-y-4">
-      <div className="rounded-2xl border border-emerald-200/70 bg-gradient-to-br from-emerald-50 via-white to-slate-50 p-5 shadow-sm">
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="space-y-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
-                Planned lectures
-              </p>
-              {isLatestPlan && (
-                <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
-                  Latest
-                </span>
-              )}
-              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
-                {plans.length} saved
-              </span>
-            </div>
-            <h3 className="text-lg font-semibold text-slate-900">
-              {moduleLabel} • {sectionLabel}
-            </h3>
-            <p className="text-xs uppercase tracking-wide text-slate-500">
-              {timestamp}
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Planned lectures
+            </p>
+            <p className="text-sm text-slate-600">
+              Review the newest plan or browse the full history.
             </p>
           </div>
-          <label className="flex flex-col text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Selected plan
-            <select
-              value={selectedPlan?.id ?? ""}
-              onChange={(event) => {
-                setSelectedPlanId(event.target.value)
-                setPlanDetailsOpen(true)
-              }}
-              className="mt-1 h-10 rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-700 shadow-sm focus:border-slate-400 focus:outline-none"
+          <div className="inline-flex rounded-xl border border-slate-200 bg-slate-50 p-1 text-xs font-semibold uppercase tracking-wide text-slate-600">
+            <button
+              type="button"
+              onClick={() => setActiveTab("latest")}
+              className={`rounded-lg px-3 py-1 ${
+                activeTab === "latest"
+                  ? "bg-white text-slate-900 shadow-sm"
+                  : "text-slate-500"
+              }`}
             >
+              Latest
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("all")}
+              className={`rounded-lg px-3 py-1 ${
+                activeTab === "all"
+                  ? "bg-white text-slate-900 shadow-sm"
+                  : "text-slate-500"
+              }`}
+            >
+              All plans
+            </button>
+          </div>
+        </div>
+
+        {activeTab === "latest" ? (
+          <div className="mt-4 rounded-2xl border border-emerald-200/70 bg-gradient-to-br from-emerald-50 via-white to-slate-50 p-6">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
+                    Latest plan
+                  </span>
+                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
+                    {plans.length} saved
+                  </span>
+                </div>
+                <h3 className="text-lg font-semibold text-slate-900">
+                  {latestModuleLabel} • {latestSectionLabel}
+                </h3>
+                <p className="text-xs uppercase tracking-wide text-slate-500">
+                  {latestTimestamp}
+                </p>
+                <div className="flex flex-wrap gap-3 text-xs text-slate-600">
+                  <span className="rounded-full bg-white px-2 py-1 shadow-xs">
+                    {latestMinutes} min
+                  </span>
+                  {latestStruggles && (
+                    <span className="rounded-full bg-white px-2 py-1 shadow-xs">
+                      Struggling: {latestStruggles}
+                    </span>
+                  )}
+                </div>
+              </div>
+              {/* <button
+                type="button"
+                onClick={() => {
+                  if (latestPlan?.id) {
+                    setSelectedPlanId(latestPlan.id)
+                    setPlanDetailsOpen(true)
+                  }
+                }}
+                className="inline-flex h-10 items-center justify-center rounded-xl border border-emerald-200 bg-white px-4 text-sm font-semibold text-emerald-700 shadow-sm transition hover:border-emerald-300 hover:text-emerald-800"
+              >
+                View latest plan
+              </button> */}
+            </div>
+          </div>
+        ) : (
+          <div className="mt-4 space-y-4">
+            {/* <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <label className="flex flex-col text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Selected plan
+                <select
+                  value={selectedPlan?.id ?? ""}
+                  onChange={(event) => {
+                    setSelectedPlanId(event.target.value)
+                    setPlanDetailsOpen(true)
+                  }}
+                  className="mt-1 h-10 rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-700 shadow-sm focus:border-slate-400 focus:outline-none"
+                >
+                  {plans.map((plan, index) => {
+                    const label = new Date(plan.created_at).toLocaleString("en-US", {
+                      month: "short",
+                      day: "numeric",
+                      hour: "numeric",
+                      minute: "2-digit",
+                    })
+                    return (
+                      <option key={plan.id} value={plan.id}>
+                        {`Plan ${index + 1} - ${label}`}
+                      </option>
+                    )
+                  })}
+                </select>
+              </label>
+            </div> */}
+            <div className="grid gap-2">
               {plans.map((plan, index) => {
                 const label = new Date(plan.created_at).toLocaleString("en-US", {
                   month: "short",
@@ -250,15 +349,37 @@ export function PlannedLectureList({
                   hour: "numeric",
                   minute: "2-digit",
                 })
+                const isSelected = plan.id === selectedPlan?.id
+                const isLatest = plan.id === latestPlan?.id
                 return (
-                  <option key={plan.id} value={plan.id}>
-                    {`Plan ${index + 1} - ${label}`}
-                  </option>
+                  <button
+                    key={plan.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedPlanId(plan.id)
+                      setPlanDetailsOpen(true)
+                    }}
+                    className={`flex items-center justify-between gap-3 rounded-xl border px-3 py-2 text-left text-sm transition ${
+                      isSelected
+                        ? "border-emerald-300 bg-emerald-50/70 text-emerald-900"
+                        : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                    }`}
+                  >
+                    <span className="font-semibold">Plan {index + 1}</span>
+                    <span className="text-xs uppercase tracking-wide text-slate-500">
+                      {label}
+                    </span>
+                    {isLatest && (
+                      <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
+                        Latest
+                      </span>
+                    )}
+                  </button>
                 )
               })}
-            </select>
-          </label>
-        </div>
+            </div>
+          </div>
+        )}
       </div>
 
       <details
@@ -277,13 +398,15 @@ export function PlannedLectureList({
               </p>
               <div className="flex items-baseline gap-2">
                 <p className="text-lg font-semibold text-slate-900">
-                  {moduleLabel}
+                  {activeModuleLabel}
                 </p>
-                <span className="text-xs text-slate-500">{sectionLabel}</span>
+                <span className="text-xs text-slate-500">
+                  {activeSectionLabel}
+                </span>
               </div>
             </div>
             <span className="text-xs font-medium uppercase text-slate-500">
-              {minutes} min
+              {activeMinutes} min
             </span>
           </div>
           <div className="space-y-3 rounded-2xl border border-slate-100 bg-slate-50/70 px-4 py-3">
@@ -292,35 +415,35 @@ export function PlannedLectureList({
                 Plan focus
               </p>
               <p className="text-sm font-semibold text-slate-900">
-                {payload.topic_to_cover || moduleLabel}
+                {activePayload.topic_to_cover || activeModuleLabel}
               </p>
             </div>
-            {payload.topic_hierarchy_covered_so_far && (
+            {activePayload.topic_hierarchy_covered_so_far && (
               <div>
                 <p className="text-xs uppercase tracking-wide text-slate-500">
                   Topic hierarchy covered
                 </p>
                 <p className="text-sm text-slate-700">
-                  {payload.topic_hierarchy_covered_so_far}
+                  {activePayload.topic_hierarchy_covered_so_far}
                 </p>
               </div>
             )}
-            {struggles && (
+            {activeStruggles && (
               <div>
                 <p className="text-xs uppercase tracking-wide text-slate-500">
                   Struggling concepts
                 </p>
-                <p className="text-sm text-slate-600">{struggles}</p>
+                <p className="text-sm text-slate-600">{activeStruggles}</p>
               </div>
             )}
           </div>
           <div className="space-y-3">
-            {planText ? (
+            {activePlanText ? (
               <ReactMarkdown
                 components={PLAN_MARKDOWN_COMPONENTS}
                 remarkPlugins={[gfm]}
               >
-                {planText}
+                {activePlanText}
               </ReactMarkdown>
             ) : (
               <p className="text-sm text-slate-500">

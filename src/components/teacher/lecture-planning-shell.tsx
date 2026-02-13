@@ -27,12 +27,12 @@ export function LecturePlanningShell({ displayName }: LecturePlanningShellProps)
     })
   }
   return (
-    <div className="space-y-6">
+    <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
       <div className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm md:p-8">
         <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-900 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-slate-100">
           Lecture Planning
         </div>
-        <h1 className="mt-3 text-2xl font-semibold text-slate-900">Lecture Planning</h1>
+        {/* <h1 className="mt-3 text-2xl font-semibold text-slate-900">Lecture Planning</h1> */}
         <p className="mt-1 text-sm text-slate-600">
           Welcome back,{" "}
           <span className="font-semibold text-slate-900">{displayName}</span>. Build lecture
@@ -50,7 +50,7 @@ export function LecturePlanningShell({ displayName }: LecturePlanningShellProps)
       </div>
 
       <div
-        className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm md:p-8"
+        className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm md:p-8 lg:sticky lg:top-6 lg:self-start"
         ref={plannedListRef}
         id="planned-lectures"
       >

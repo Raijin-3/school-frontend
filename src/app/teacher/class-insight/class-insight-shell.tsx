@@ -8,6 +8,7 @@ import {
   ChevronRight,
   ClipboardList,
   FileText,
+  Loader2,
   Sparkles,
   TrendingUp,
   X,
@@ -389,6 +390,7 @@ type SectionProgressSummary = {
   assigned: boolean
   assignedStudents: number
   attemptedStudents: number
+  completionPercent: number | null
 }
 
 function buildSectionProgressSummaries(
@@ -414,6 +416,7 @@ function buildSectionProgressSummaries(
           assigned: section.assigned ?? false,
           assignedStudents: 0,
           attemptedStudents: 0,
+          completionPercent: null,
         })
         order.push(key)
       }
@@ -454,6 +457,22 @@ function buildSectionProgressSummaries(
     if (reportedScores.length) {
       summary.averageScore = Math.round(
         reportedScores.reduce((sum, value) => sum + value, 0) / reportedScores.length,
+      )
+    }
+    if (summary.assignedStudents > 0) {
+      const completionPoints = summary.studentScores.reduce((sum, entry) => {
+        if (!entry.section_detail.assigned) return sum
+        const progress =
+          entry.section_detail.completion_progress !== null &&
+          entry.section_detail.completion_progress !== undefined
+            ? entry.section_detail.completion_progress
+            : entry.section_detail.completed
+            ? 1
+            : 0
+        return sum + progress
+      }, 0)
+      summary.completionPercent = Math.round(
+        (completionPoints / summary.assignedStudents) * 100,
       )
     }
     summary.studentScores.sort((a, b) => {
@@ -1268,7 +1287,11 @@ export default function ClassInsightShell(props: Props) {
       )
     }
 
-    const renderSectionActionForBucket = (action: FocusGroupAction, bucket: SectionBucket) => {
+    const renderSectionActionForBucket = (
+      action: FocusGroupAction,
+      bucket: SectionBucket,
+      layout: "inline" | "stack" = "inline",
+    ) => {
       const actionKey = `${group.title}-${bucket.id}-${action.label}`
       const isLoading = Boolean(sectionActionLoading[actionKey])
       const isDisabled = !bucket.students.length || isLoading
@@ -1284,6 +1307,11 @@ export default function ClassInsightShell(props: Props) {
           : action.label === "Weakness Practice Quiz."
           ? { button: "bg-amber-600 hover:bg-amber-700", icon: "bg-amber-500" }
           : { button: "bg-emerald-600 hover:bg-emerald-700", icon: "bg-emerald-500" }
+      const buttonClasses =
+        layout === "stack"
+          ? "w-full px-5 py-2.5 text-[11px]"
+          : "px-3 py-1.5 text-[10px]"
+      const buttonLabel = isLoading ? "Sending please wait..." : action.label
       return (
         <button
           key={actionKey}
@@ -1328,7 +1356,8 @@ export default function ClassInsightShell(props: Props) {
               classTiming,
             )
           }}
-          className={`group inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-white shadow-sm transition ${
+          style={{ textAlign: "left" }}
+          className={`group inline-flex items-center gap-2 rounded-full font-semibold uppercase tracking-[0.18em] text-white shadow-sm transition ${buttonClasses} ${
             isDisabled
               ? "cursor-allowed bg-slate-200 text-slate-500"
               : actionTone.button
@@ -1339,12 +1368,16 @@ export default function ClassInsightShell(props: Props) {
               isDisabled ? "bg-slate-300 text-slate-500" : `${actionTone.icon} text-white`
             }`}
           >
-            {(() => {
-              const Icon = actionIcon
-              return <Icon className="h-3 w-3" />
-            })()}
+            {isLoading ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              (() => {
+                const Icon = actionIcon
+                return <Icon className="h-3 w-3" />
+              })()
+            )}
           </span>
-          {isLoading ? "Sending..." : action.label}
+          {buttonLabel}
         </button>
       )
     }
@@ -1501,65 +1534,78 @@ export default function ClassInsightShell(props: Props) {
             </div>
             {isExpanded && (
               <div className="border-t border-slate-200 px-4 py-3">
-                {scoredStudents.length ? (
-                  <div className="grid mt-3 mb-5 gap-2 sm:grid-cols-2 lg:grid-cols-6">
-                    {scoredStudents.map((row) => {
-                      const scoreLabel = `${Math.round(row.section_score ?? 0)}%`
-                      const scoreTone = getScoreTone(row.section_score)
-                      return (
-                        <div
-                          key={`${row.student_id}-${row.section_id ?? row.section_title}`}
-                          className="rounded-xl border border-slate-200 bg-slate-50/60 p-3"
-                        >
-                          <p className="text-sm font-semibold text-slate-900">{row.student_name}</p>
-                          <p className={`mt-1 text-xs font-semibold ${sectionScoreToneClasses[scoreTone]}`}>
-                            Mastery {scoreLabel}
-                          </p>
-                        </div>
-                      )
-                    })}
-                  </div>
-                ) : (
-                  <p className="text-xs text-slate-500">No scored students yet.</p>
-                )}
-                <div className="mt-5 mb-2 flex flex-wrap gap-2">
-                  {sectionActions.map((action) => renderSectionActionForBucket(action, bucket))}
-                </div>
-                <div className="mt-3 flex flex-col gap-2 border-t border-dashed border-slate-200 pt-3 text-xs text-slate-500">
-                  {(() => {
-                    const actions = sectionActionLog[bucket.id] ?? []
-                    if (!actions.length) {
-                      return <p>No actions taken yet.</p>
-                    }
-                    const last = actions[0]
-                    return (
-                      <div className="space-y-1">
-                        <p className="text-[11px] text-slate-500">
-                          Last action:{" "}
-                          <span className="text-[11px] font-semibold text-slate-900">{last.label}</span>
-                        </p>
-                        <p className="text-[11px] text-slate-500">
-                          Last action time:{" "}
-                          <span className="text-[11px] font-semibold text-slate-900">
-                            {formatReadyTimestamp(last.timestamp)}
-                          </span>
-                        </p>
+                <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_260px]">
+                  <div>
+                    {scoredStudents.length ? (
+                      <div className="grid mt-3 mb-5 gap-3 sm:grid-cols-2 lg:grid-cols-6">
+                        {scoredStudents.map((row) => {
+                          const scoreLabel = `${Math.round(row.section_score ?? 0)}%`
+                          const scoreTone = getScoreTone(row.section_score)
+                          return (
+                            <div
+                              key={`${row.student_id}-${row.section_id ?? row.section_title}`}
+                              className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+                            >
+                              <p className="text-sm font-semibold text-slate-900">{row.student_name}</p>
+                              <p className={`mt-2 text-xs font-semibold ${sectionScoreToneClasses[scoreTone]}`}>
+                                Mastery {scoreLabel}
+                              </p>
+                            </div>
+                          )
+                        })}
                       </div>
-                    )
-                  })()}
-                  <button
-                    type="button"
-                    disabled={actionHistoryLoadingFor === bucket.id}
-                    onClick={() => {
-                      setActionLogBucketId(bucket.id)
-                      const sectionId = bucket.students.map((row) => row.section_id).find(Boolean) ?? null
-                      void fetchSectionHistory(bucket.id, sectionId)
-                    }}
-                    style={{width: "20%", float: "left"}}
-                    className=" inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-900 shadow-sm disabled:cursor-allowed disabled:opacity-60"
-                  >
-                    {actionHistoryLoadingFor === bucket.id ? "Loading..." : "View action history"}
-                  </button>
+                    ) : (
+                      <p className="text-xs text-slate-500">No scored students yet.</p>
+                    )}
+                    <div className="mt-3 flex flex-col gap-2 border-t border-dashed border-slate-200 pt-3 text-xs text-slate-500">
+                      {(() => {
+                        const actions = sectionActionLog[bucket.id] ?? []
+                        if (!actions.length) {
+                          return <p>No actions taken yet.</p>
+                        }
+                        const last = actions[0]
+                        return (
+                          <div className="space-y-1">
+                            <p className="text-[11px] text-slate-500">
+                              Last action:{" "}
+                              <span className="text-[11px] font-semibold text-slate-900">{last.label}</span>
+                            </p>
+                            <p className="text-[11px] text-slate-500">
+                              Last action time:{" "}
+                              <span className="text-[11px] font-semibold text-slate-900">
+                                {formatReadyTimestamp(last.timestamp)}
+                              </span>
+                            </p>
+                          </div>
+                        )
+                      })()}
+                      <button
+                        type="button"
+                        disabled={actionHistoryLoadingFor === bucket.id}
+                        onClick={() => {
+                          setActionLogBucketId(bucket.id)
+                          const sectionId = bucket.students.map((row) => row.section_id).find(Boolean) ?? null
+                          void fetchSectionHistory(bucket.id, sectionId)
+                        }}
+                        style={{ float: "left", width: "200px" }}
+                        className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-900 shadow-sm disabled:cursor-allowed disabled:opacity-60"
+                      >
+                        {actionHistoryLoadingFor === bucket.id ? "Loading..." : "View action history"}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="self-start lg:sticky lg:top-6">
+                    <div className="space-y-2 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                        Take action
+                      </p>
+                      <div className="space-y-2">
+                        {sectionActions.map((action) =>
+                          renderSectionActionForBucket(action, bucket, "stack"),
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
@@ -1591,39 +1637,15 @@ export default function ClassInsightShell(props: Props) {
           )}
           {group.title === "Ready for Extension" ? null : sectionBuckets.length ? (
             group.title === "Stuck Students" ? (
-              <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
-                <div className="space-y-3">
-                  <p className="text-xs text-slate-500">
-                    Actions are available inside each section; use the header to expand or collapse.
-                  </p>
-                  {stuckSectionTables.length ? (
-                    <div className="space-y-3">{stuckSectionTables}</div>
-                  ) : (
-                    <p className="text-xs text-slate-500">{meta.emptyMessage}</p>
-                  )}
-                </div>
-                <div className="space-y-3">
-                  <div className="sticky top-4 rounded-2xl border border-slate-200/80 bg-white/80 p-4 shadow-sm">
-                    <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500">
-                      <b>AI Suggestion</b>
-                    </p>
-                    <p className="text-xs text-slate-500">
-                      Use the action buttons inside each section to guide next steps.
-                    </p>
-                    <div className="mt-3 space-y-3 text-xs text-slate-600">
-                      {sectionActions.map((action) => (
-                        <div key={`stuck-help-${action.label}`} className="rounded-xl border border-slate-100 bg-slate-50/70 p-3">
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-700">
-                            {action.label}
-                          </p>
-                          <p className="mt-1 text-[11px] text-slate-500">
-                            {action.description ?? action.buildMessage("this section")}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
+              <div className="space-y-3">
+                <p className="text-xs text-slate-500">
+                  Actions are available inside each section; use the header to expand or collapse.
+                </p>
+                {stuckSectionTables.length ? (
+                  <div className="space-y-3">{stuckSectionTables}</div>
+                ) : (
+                  <p className="text-xs text-slate-500">{meta.emptyMessage}</p>
+                )}
               </div>
             ) : (
               <div className="space-y-3">{bucketCards}</div>
@@ -1870,7 +1892,7 @@ export default function ClassInsightShell(props: Props) {
       )}
       <div className="text-xs text-slate-500">
           {group.title === "Incomplete Objectives"
-            ? "Automatic reminders target the first active section."
+            ? "Kindly send a reminder to complete the pending tasks at the earliest."
             : group.title === "Ready for Extension"
             ? ""
             : group.title === "Stuck Students"
@@ -2471,12 +2493,7 @@ export default function ClassInsightShell(props: Props) {
                                         1,
                                         section.strong + section.average + section.weak + section.notStarted,
                                       )
-                                      const completionPercent =
-                                        section.assignedStudents > 0
-                                          ? Math.round(
-                                              (section.attemptedStudents / section.assignedStudents) * 100,
-                                            )
-                                          : null
+                                      const completionPercent = section.completionPercent
                                       const isSectionOpen = openSectionId === section.section_id
 
                                       return (
@@ -2537,7 +2554,7 @@ export default function ClassInsightShell(props: Props) {
                                                             <th className="px-3 py-2 text-white text-left">Student</th>
                                                             <th className="px-3 py-2 text-white text-center">Score</th>
                                                             <th className="px-3 py-2 text-white text-center">Adaptive Quiz</th>
-                                                            <th className="px-3 py-2 text-white text-center">Practice Exercises</th>
+                                                            <th className="px-3 py-2 text-white text-center">Practice Exercise</th>
                                                             <th className="px-3 py-2 text-white text-center">Hints Used</th>
                                                             <th className="px-3 py-2 text-white text-center">Action</th>
                                                           </tr>
@@ -2574,20 +2591,42 @@ export default function ClassInsightShell(props: Props) {
                                                                   </div>
                                                                 </td>
                                                                 <td className="px-3 py-3 text-center">
-                                                                  <p className={`font-semibold ${statusToneClasses[detail.adaptive_status]}`}>
-                                                                    {detail.adaptive_percent ?? "--"}%
-                                                                  </p>
-                                                                  <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400">
-                                                                    {detail.adaptive_status}
-                                                                  </p>
+                                                                  {detail.access && !detail.access.adaptive ? (
+                                                                    <>
+                                                                      <p className="font-semibold text-slate-400">Disabled</p>
+                                                                      {/* <p className="text-[10px] uppercase tracking-[0.2em] text-slate-300">
+                                                                        Disabled
+                                                                      </p> */}
+                                                                    </>
+                                                                  ) : (
+                                                                    <>
+                                                                      <p className={`font-semibold ${statusToneClasses[detail.adaptive_status]}`}>
+                                                                        {detail.adaptive_percent ?? "--"}%
+                                                                      </p>
+                                                                      <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400">
+                                                                        {detail.adaptive_status ?? "In progress"}
+                                                                      </p>
+                                                                    </>
+                                                                  )}
                                                                 </td>
                                                                 <td className="px-3 py-3 text-center">
-                                                                  <p className={`font-semibold ${statusToneClasses[detail.exercise_status]}`}>
-                                                                    {detail.exercise_percent ?? "--"}%
-                                                                  </p>
-                                                                  <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400">
-                                                                    {detail.exercise_status}
-                                                                  </p>
+                                                                  {detail.access && !detail.access.exercise ? (
+                                                                    <>
+                                                                      <p className="font-semibold text-slate-400">Disabled</p>
+                                                                      {/* <p className="text-[10px] uppercase tracking-[0.2em] text-slate-300">
+                                                                        Disabled
+                                                                      </p> */}
+                                                                    </>
+                                                                  ) : (
+                                                                    <>
+                                                                      <p className={`font-semibold ${statusToneClasses[detail.exercise_status]}`}>
+                                                                        {detail.exercise_percent ?? "--"}%
+                                                                      </p>
+                                                                      <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400">
+                                                                        {detail.exercise_status ?? "In progress"}
+                                                                      </p>
+                                                                    </>
+                                                                  )}
                                                                 </td>
                                                                 <td className="px-3 py-3 text-center">
                                                                   {detail.exercise_hint_count ? (
@@ -3173,10 +3212,21 @@ export default function ClassInsightShell(props: Props) {
                   const isExpanded = expandedStudentId === student.student_id
                   const studentSections = student.sections ?? []
                   const totalSections = studentSections.length
-                  const completedSections = studentSections.filter((section) => section.completed).length
+                  const assignedSections = studentSections.filter((section) => section.assigned)
+                  const totalAssignedSections = assignedSections.length
+                  const completionPoints = assignedSections.reduce(
+                    (sum, section) =>
+                      sum +
+                      (section.completion_progress !== null && section.completion_progress !== undefined
+                        ? section.completion_progress
+                        : section.completed
+                        ? 1
+                        : 0),
+                    0,
+                  )
                   const computedCompletionPercent =
-                    totalSections > 0
-                      ? Math.round((completedSections / totalSections) * 100)
+                    totalAssignedSections > 0
+                      ? Math.round((completionPoints / totalAssignedSections) * 100)
                       : null
                   const fallbackCompletionPercent =
                     student.module_completion_percent !== null && student.module_completion_percent !== undefined
@@ -3190,7 +3240,7 @@ export default function ClassInsightShell(props: Props) {
                       : "--"
                   const completionDetailText =
                     computedCompletionPercent !== null
-                      ? `${computedCompletionPercent}% of ${totalSections} sections`
+                      ? `${computedCompletionPercent}% of ${totalAssignedSections} assigned sections`
                       : fallbackCompletionPercent !== null
                       ? `${fallbackCompletionPercent}% of sections`
                       : "No completion data"
@@ -3279,30 +3329,51 @@ export default function ClassInsightShell(props: Props) {
                                             </div>
                                             <span>{scoreLabel}</span>
                                           </div>
-                                      {section.completed ? (
+                                      {section.completed || section.started ? (
                                         <>
                                           <div className="mt-1 grid gap-2 text-[11px] text-slate-500 sm:grid-cols-2">
                                             <div>
                                               <p className="text-[11px] text-slate-500">
-                                                <b>Quiz:</b> {section.adaptive_percent ?? "--"}%
+                                                <b>Quiz:</b>{" "}
+                                                {section.access && !section.access.adaptive
+                                                  ? "Disabled"
+                                                  : `${section.adaptive_percent ?? "--"}%`}
                                               </p>
                                               <p
-                                                className={`text-[11px] font-semibold ${statusToneClasses[section.adaptive_status]}`}
+                                                className={`text-[11px] font-semibold ${
+                                                  section.access && !section.access.adaptive
+                                                    ? "text-slate-400"
+                                                    : statusToneClasses[section.adaptive_status]
+                                                }`}
                                               >
-                                                {section.adaptive_status}
+                                                {section.access && !section.access.adaptive
+                                                  ? "Disabled"
+                                                  : section.adaptive_status ?? "In progress"}
                                               </p>
                                             </div>
                                             <div className="text-right sm:text-right" >
                                               <p className="text-[11px] text-slate-500">
-                                                <b>Exercises</b> {section.exercise_percent ?? "--"}%
+                                                <b>Exercise: </b>{" "}
+                                                {section.access && !section.access.exercise
+                                                  ? "Disabled"
+                                                  : `${section.exercise_percent ?? "--"}%`}
                                               </p>
                                               <p
-                                                className={`text-[11px] font-semibold ${statusToneClasses[section.exercise_status]}`}
+                                                className={`text-[11px] font-semibold ${
+                                                  section.access && !section.access.exercise
+                                                    ? "text-slate-400"
+                                                    : statusToneClasses[section.exercise_status]
+                                                }`}
                                               >
-                                                {section.exercise_status}
+                                                {section.access && !section.access.exercise
+                                                  ? "Disabled"
+                                                  : section.exercise_status ?? "In progress"}
                                               </p>
                                             </div>
                                           </div>
+                                          {!section.completed && (
+                                            <p className="mt-1 text-[10px] text-amber-600">Started</p>
+                                          )}
                                           {/* <p className={`mt-1 text-[10px] ${
                                               section.completed ? "text-emerald-600" : "text-yellow-500"
                                             }`}
@@ -3338,7 +3409,13 @@ export default function ClassInsightShell(props: Props) {
                                           ) : null}
                                         </>
                                       ) : (
-                                        <p className="mt-1 text-[10px] text-yellow-500">Not started</p>
+                                        <p
+                                          className={`mt-1 text-[10px] ${
+                                            section.started ? "text-amber-600" : "text-yellow-500"
+                                          }`}
+                                        >
+                                          {section.started ? "Started" : "Not started"}
+                                        </p>
                                       )}
                                     </div>
                                     )

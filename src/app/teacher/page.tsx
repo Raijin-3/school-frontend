@@ -48,7 +48,7 @@ export default async function TeacherPage() {
   return (
     <div className="min-h-dvh bg-slate-50">
       <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,rgba(15,23,42,0.04)_1px,transparent_1px),linear-gradient(to_bottom,rgba(15,23,42,0.04)_1px,transparent_1px)] [background-size:48px_48px]" />
-      <div className="relative mx-auto max-w-6xl p-4 md:p-6">
+      <div className="relative mx-auto max-w-7xl p-4 md:p-6">
         <div className="relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white p-6 shadow-lg md:p-8">
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(600px_240px_at_100%_-10%,rgba(15,23,42,.08),transparent),radial-gradient(500px_240px_at_-10%_120%,rgba(16,185,129,.12),transparent)]" />
           <div className="relative z-10">

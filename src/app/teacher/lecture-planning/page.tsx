@@ -19,7 +19,7 @@ export default async function LecturePlanningPage() {
   return (
     <div className="min-h-dvh bg-slate-50">
       <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,rgba(15,23,42,0.04)_1px,transparent_1px),linear-gradient(to_bottom,rgba(15,23,42,0.04)_1px,transparent_1px)] [background-size:48px_48px]" />
-      <div className="relative mx-auto max-w-6xl p-4 md:p-6">
+      <div className="relative mx-auto max-w-7xl p-4 md:p-6">
         <LecturePlanningShell displayName={displayName} />
       </div>
     </div>
